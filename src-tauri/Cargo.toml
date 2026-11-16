@@ -1,0 +1,27 @@
+[package]
+name = "hourglass"
+version = "1.0.0"
+description = "MeMo - A private couple space app with period tracking and shared milestones"
+authors = ["MeMo Team"]
+edition = "2021"
+
+[lib]
+name = "hourglass_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-macros = { version = "2" }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-notification = "2"
+tauri-plugin-store = "2"
+tauri-plugin-clipboard-manager = "2"
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+time = "0.3"

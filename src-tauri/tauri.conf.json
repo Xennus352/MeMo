@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MeMo 💕",
+  "version": "1.0.0",
+  "identifier": "com.memo.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "MeMo 💕",
+        "width": 390,
+        "height": 844,
+        "minWidth": 360,
+        "minHeight": 640,
+        "resizable": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "minSdkVersion": 24,
+      "targetSdkVersion": 34,
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE"
+      ]
+    },
+    "ios": {
+      "minimumSystemVersion": "15.0",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"],
+        "NSLocalNetworkUsageDescription": "Needed for device pairing discovery",
+        "NSUserTrackingUsageDescription": "This app does not track you",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  },
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:hourglass.db"]
+    },
+    "notification": {},
+    "store": {},
+    "clipboardManager": {}
+  }
+}
