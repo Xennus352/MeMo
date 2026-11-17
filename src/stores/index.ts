@@ -1,5 +1,11 @@
 export { useUserStore } from './userStore';
 export { usePeriodStore } from './periodStore';
 export { useMilestoneStore } from './milestoneStore';
+export { useNoticeStore } from './noticeStore';
 export { useAnniversaryStore } from './anniversaryStore';
 export { usePairingStore } from './pairingStore';
+export { usePresenceStore } from './presenceStore';
+export { useDeletionStore } from './deletionStore';
+export { useVoiceStore } from './voiceStore';
+export { useIslandStore } from './islandStore';
+export { useUpdaterStore } from './updaterStore';

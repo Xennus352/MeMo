@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { X, Check, User, Bell, Palette, Globe, Database, Share2, Download, Upload, Trash2, Shield, Info, Moon, Sun, Monitor, Heart, Users, Droplet, Sparkles, Calendar, Clock, Camera, Music, Plane, Car, Home, Baby, Award, Eye, Edit2, ChevronRight, ChevronLeft } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { X, Check, User, Bell, Palette, Globe, Database, Share2, Download, Upload, Trash2, Shield, Info, Moon, Sun, Monitor, Heart, Users, Droplet, Droplets, Sparkles, Calendar, Clock, Camera, Music, Plane, Car, Home, Baby, Award, Eye, Edit2, ChevronRight, ChevronLeft, Volume2, Layers, MoveHorizontal, Circle, MoveDiagonal, Paintbrush, Shuffle, SlidersHorizontal, Waves } from 'lucide-react';
 import { cn, dateKey, formatDateKeyFull } from '@/utils/helpers';
-import { exportData, importData } from '@/lib/tauri';
+import { exportData, importData, unpairRemoteDevice } from '@/lib/tauri';
+import { DatePickerField } from '@/components/ui/CalendarPicker';
 import { GlassView, Button, GlassCard, MotionGlassCard, ModalBackdrop } from '@/components/ui/GlassComponents';
 import { UserRole, NotificationSettings, AppSettings } from '@/types';
 import { createPortal } from 'react-dom';
@@ -10,7 +11,13 @@ import { useUserStore } from '@/stores';
 import { usePeriodStore } from '@/stores';
 import { useMilestoneStore } from '@/stores';
 import { useAnniversaryStore } from '@/stores';
-import { useCustomModals } from '@/components/ui/CustomModals';
+import { useCustomModals, useToast } from '@/components/ui/CustomModals';
+import { requestNotificationPermission, getNotificationPermissionState, notify } from '@/lib/reminders';
+import { useVoiceStore } from '@/stores';
+import { useUpdaterStore } from '@/stores';
+import { speakTest } from '@/lib/voiceAlert';
+import { isTauri, invoke } from '@tauri-apps/api/core';
+import { parseThemeTransition, serializeThemeTransition, type ThemeTransitionConfig, type ThemeTransitionEffect, type WipeOrientation, type CircleOrigin, type SwipeDirection } from '@/lib/theme';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -45,14 +52,87 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     updateProfile,
     cycleSettings,
     updateCycleSettings,
+    setLastPeriodStart,
     notificationSettings,
     updateNotificationSettings,
     appSettings,
     updateAppSettings,
     reset: resetUser,
+    deviceId,
   } = useUserStore();
 
   const { showConfirm, showAlert } = useCustomModals();
+  const { showToast } = useToast();
+  const [permState, setPermState] = useState<'granted' | 'denied' | 'off' | 'unsupported'>('off');
+
+  // Re-read the permission whenever the user returns to the app (e.g. after flipping the switch in OS settings)
+  useEffect(() => {
+    const refresh = () => { getNotificationPermissionState().then(setPermState).catch(() => {}); };
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    void refresh();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      getNotificationPermissionState().then(setPermState).catch(() => setPermState('off'));
+    }
+  }, [isOpen]);
+
+  const handleNotificationToggle = async (key: string, next: boolean) => {
+    await updateNotificationSettings({ [key]: next });
+    if (next) {
+      // Ask for permission right at the moment the user opts in
+      await requestNotificationPermission();
+      setPermState(await getNotificationPermissionState());
+    }
+  };
+
+  const handleEnableNotifications = async () => {
+    const granted = await requestNotificationPermission();
+    if (granted) {
+      setPermState('granted');
+      showToast('Notifications enabled 💕', 'success');
+      return;
+    }
+    // Permission was denied before, or the system refused — take them straight to the switch
+    try {
+      if (await isTauri()) {
+        await invoke('plugin:shoon-alarm|open_notification_settings');
+        showToast('Turn on notifications in Settings, then come back', 'success');
+        return;
+      }
+    } catch (error) {
+      console.warn('Could not open notification settings directly:', error);
+    }
+    setPermState(await getNotificationPermissionState());
+    showToast('Notifications are still blocked', 'error');
+  };
+
+  const handleTestNotification = async () => {
+    await requestNotificationPermission();
+    setPermState(await getNotificationPermissionState());
+    // The Dynamic Island IS what a reminder looks like with MeMo open
+    await notify('MeMo 💕', 'အသိပေးချက်များ ဖြစ်ပါတယ်။', 'memo-test');
+    showToast('Test reminder sent 💕', 'success');
+  };
+
+  const voice = useVoiceStore();
+
+  const handleTestVoice = async () => {
+    const result = await speakTest();
+    showToast(
+      result === 'nara' ? 'Shoon 💕 is Speaking'
+        : result === 'system' ? 'Speaking via the Myanmar system voice 💕'
+        : 'No voice output available on this device',
+      result === 'none' ? 'error' : 'success'
+    );
+  };
 
   const { entries: periodEntries } = usePeriodStore();
   const { items: milestones } = useMilestoneStore();
@@ -74,10 +154,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const a = document.createElement('a');
       a.href = url;
       a.download = `memo-backup-${dateKey()}.json`;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       URL.revokeObjectURL(url);
+      showToast('Backup downloaded 💕', 'success');
     } catch (error) {
       console.error('Export failed:', error);
+      showToast('Export failed — please try again', 'error');
     } finally {
       setExporting(false);
     }
@@ -90,7 +174,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       await importData(text); // reloads the app with the restored backup
     } catch (error) {
       console.error('Import failed:', error);
-      showAlert('Import Failed', 'That file could not be read. Please choose a MeMo JSON backup and try again.', 'error');
+      showAlert('Import Failed', 'That file could not be restored. It must be an untouched MeMo JSON backup — nothing was changed.', 'error');
     } finally {
       setImporting(false);
     }
@@ -112,6 +196,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           cancelText: 'Cancel',
           onConfirm: () => {
             resetUser();
+            // Best-effort unpair so the partner's device stops pairing into a tombstoned store
+            unpairRemoteDevice(profile?.deviceId ?? deviceId ?? '').catch(() => {});
             localStorage.clear();
             window.location.reload();
           },
@@ -276,6 +362,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </select>
           </MotionGlassCard>
         </div>
+
+        {/* Last period start — drives the cycle predictions everywhere */}
+        <div className="mt-4">
+          <label className="block text-caption font-medium text-text-secondary mb-2">
+            Last Period Started
+          </label>
+          <DatePickerField
+            value={cycleSettings.lastPeriodStart ?? undefined}
+            onChange={date => setLastPeriodStart(date)}
+            placeholder="Pick the day your period started"
+            max={dateKey(new Date())}
+          />
+          <p className="text-caption text-text-muted mt-2 normal-case">
+            Used to predict your next period and fertile window across the app.
+          </p>
+        </div>
       </motion.div>
 
       {/* Partner Status */}
@@ -322,6 +424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     >
       {[
         { key: 'periodReminder', label: 'Period Reminder', desc: 'Get notified before your period starts', icon: Droplet },
+        { key: 'periodEndedReminder', label: 'Period Ended', desc: 'A sweet note for surviving your period — you are strong', icon: Droplets },
         { key: 'ovulationReminder', label: 'Ovulation Reminder', desc: 'Know when you\'re most fertile', icon: Sparkles },
         { key: 'milestoneReminder', label: 'Milestone Reminders', desc: 'Upcoming anniversaries & memories', icon: Heart },
         { key: 'anniversaryReminder', label: 'Anniversary Reminders', desc: 'Never forget special dates', icon: Award },
@@ -344,7 +447,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <motion.button
               whileTap={{ scale: 0.95 }}
-              onClick={() => updateNotificationSettings({ [item.key]: !notificationSettings[item.key as keyof NotificationSettings] })}
+              onClick={() => handleNotificationToggle(item.key, !notificationSettings[item.key as keyof NotificationSettings])}
               className={cn(
                 'relative w-12 h-7 rounded-full transition-all duration-200 flex-shrink-0',
                 notificationSettings[item.key as keyof NotificationSettings] ? 'bg-accent' : 'bg-text-muted/20'
@@ -360,6 +463,109 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </MotionGlassCard>
       ))}
+
+      {/* Permission banner — reminders only fire when notifications are allowed */}
+      <MotionGlassCard className={cn('p-4 flex items-center gap-3', permState === 'granted' ? 'border border-success/30' : 'border border-warning/30')}>
+        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', permState === 'granted' ? 'bg-success-light' : 'bg-warning-light')}>
+          <Bell className={cn('w-5 h-5', permState === 'granted' ? 'text-success' : 'text-warning')} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-text">{permState === 'granted' ? 'Notifications on' : permState === 'denied' ? 'Notifications blocked' : 'Notifications off'}</p>
+          <p className="text-caption text-text-muted normal-case">{permState === 'granted' ? 'You’ll get reminders while the app is open (and on schedule on native builds)' : permState === 'denied' ? 'We’ll open Android’s notification settings — flip on Notifications there' : 'Turn them on to receive reminders'}</p>
+        </div>
+        {permState !== 'granted' && (
+          <Button variant="secondary" size="sm" onClick={handleEnableNotifications} className="flex-shrink-0">
+            Turn on
+          </Button>
+        )}
+      </MotionGlassCard>
+
+      <MotionGlassCard className="p-4">
+        <button
+          onClick={handleTestNotification}
+          className="w-full flex items-center gap-3 text-left rounded-xl px-2 py-1.5 hover:bg-surface-subtle transition-colors"
+        >
+          <div className="w-10 h-10 rounded-xl bg-secondary-light flex items-center justify-center flex-shrink-0">
+            <Bell className="w-5 h-5 text-secondary" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium text-text">Send test notification</p>
+            <p className="text-caption text-text-muted normal-case">See exactly what your reminders will look like</p>
+          </div>
+          <ChevronRight className="w-5 h-5 text-text-muted ml-auto flex-shrink-0" />
+        </button>
+      </MotionGlassCard>
+
+      {/* AI Voice — Shoon speaks the reminder out loud (on/off only) */}
+      <MotionGlassCard className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center flex-shrink-0">
+              <Volume2 className="w-5 h-5 text-accent" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-medium text-text">AI Voice</p>
+              <p className="text-caption text-text-muted normal-case">Shoon reads the reminder aloud · Burmese</p>
+            </div>
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => voice.setEnabled(!voice.enabled)}
+            className={cn(
+              'relative w-12 h-7 rounded-full transition-all duration-200 flex-shrink-0',
+              voice.enabled ? 'bg-accent' : 'bg-text-muted/20'
+            )}
+            aria-pressed={voice.enabled}
+            aria-label="AI Voice"
+          >
+            <motion.span
+              className="absolute left-0 top-0.5 w-6 h-6 rounded-full bg-white shadow-md"
+              animate={{ x: voice.enabled ? 22 : 2 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            />
+          </motion.button>
+        </div>
+
+        {voice.enabled && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 pt-4 border-t border-border space-y-3 overflow-hidden"
+          >
+            <p className="text-caption text-text-muted normal-case">
+              Shoon · Burmese &amp; English
+            </p>
+            <button
+              onClick={handleTestVoice}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-body-sm font-semibold bg-accent-light text-accent hover:brightness-105 transition-all"
+            >
+              <Volume2 className="w-4 h-4" />
+              Test voice
+            </button>
+            {/* <div>
+              <label htmlFor="nara-url" className="block text-caption font-medium text-text-secondary mb-1.5">
+                Voice server address
+              </label>
+              <input
+                id="nara-url"
+                type="text"
+                defaultValue={voice.naraUrl}
+                onBlur={e => voice.setNaraUrl(e.target.value.trim() || 'http://127.0.0.1:8899')}
+                placeholder="http://192.168.x.x:8899"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="url"
+                className="w-full px-3 py-2.5 rounded-xl bg-input border border-border text-text text-body-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+              />
+              <p className="text-caption text-text-muted normal-case mt-1.5">
+                Locked-phone Shoon: point this at the computer running the Shoon server on the same Wi-Fi (e.g. <code>http://192.168.1.20:8899</code>), then the reminder is cached for speaking while the phone is locked. Leave as-is for in-app voice only.
+              </p>
+            </div> */}
+          </motion.div>
+        )}
+      </MotionGlassCard>
 
       {notificationSettings.periodReminder && (
         <motion.div
@@ -378,6 +584,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <option key={d} value={d}>{d} day{ d > 1 ? 's' : '' } before</option>
               ))}
             </select>
+          </MotionGlassCard>
+        </motion.div>
+      )}
+
+      {notificationSettings.anniversaryReminder && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7, duration: 0.4 }}
+        >
+          <MotionGlassCard className="p-4">
+            <label className="block text-caption font-medium text-text-secondary mb-2">Days Before Anniversary</label>
+            <select
+              value={notificationSettings.anniversaryReminderDays}
+              onChange={e => updateNotificationSettings({ anniversaryReminderDays: parseInt(e.target.value) })}
+              className="w-full px-4 py-3 rounded-xl bg-input border border-border text-text focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+            >
+              {[1, 2, 3, 5, 7, 14, 30].map(d => (
+                <option key={d} value={d}>{d} day{d > 1 ? 's' : ''} before</option>
+              ))}
+            </select>
+            <p className="text-caption text-text-muted mt-2 normal-case">Applies to every anniversary you add — each one reminds you this many days before its date every year.</p>
           </MotionGlassCard>
         </motion.div>
       )}
@@ -405,6 +633,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </motion.div>
   );
 
+  const transition = parseThemeTransition(appSettings.themeTransition);
+  const updateTransition = (patch: Partial<ThemeTransitionConfig>) => {
+    const next = { ...parseThemeTransition(appSettings.themeTransition), ...patch };
+    updateAppSettings({ themeTransition: serializeThemeTransition(next) });
+  };
+
+  const transitionEffects: { id: ThemeTransitionEffect; label: string; icon: typeof Layers; swatch: string }[] = [
+    { id: 'fade', label: 'Fade', icon: Layers, swatch: 'tx-fade' },
+    { id: 'wipe', label: 'Wipe', icon: MoveHorizontal, swatch: 'tx-wipe-h' },
+    { id: 'circle', label: 'Circle', icon: Circle, swatch: 'tx-circle' },
+    { id: 'swipe', label: 'Swipe', icon: MoveDiagonal, swatch: 'tx-swipe-left' },
+    { id: 'paint', label: 'Paint', icon: Paintbrush, swatch: 'tx-paint' },
+  ];
+
   const renderAppearanceTab = () => (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -429,18 +671,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <motion.button
               key={theme.value}
               whileTap={{ scale: 0.97 }}
-              onClick={() => updateAppSettings({ theme: theme.value as 'light' | 'dark' })}
+              onClick={(e) => updateAppSettings(
+                { theme: theme.value as 'light' | 'dark' },
+                { originX: e.clientX / window.innerWidth, originY: e.clientY / window.innerHeight }
+              )}
               className={cn(
-                'p-4 rounded-xl border-2 transition-all',
+                'relative p-4 rounded-xl border-2 transition-all',
                 appSettings.theme === theme.value
                   ? 'border-accent bg-accent-light'
                   : 'border-border hover:border-accent/50'
               )}
             >
+              <AnimatePresence initial={false}>
+                {appSettings.theme === theme.value && (
+                  <motion.div
+                    key={`check-${theme.value}`}
+                    initial={{ scale: 0, rotate: -120, opacity: 0 }}
+                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                    exit={{ scale: 0, rotate: 120, opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 460, damping: 22 }}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-accent text-on-accent flex items-center justify-center"
+                    aria-hidden
+                  >
+                    <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                key={`icon-${theme.value}-${appSettings.theme === theme.value ? 'active' : 'idle'}`}
+                initial={{ scale: 0.4, rotate: -25, opacity: 0.4 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 20 }}
                 className="w-6 h-6 mx-auto mb-2"
               >
                 <theme.icon className="w-6 h-6" />
@@ -449,6 +710,149 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </motion.button>
           ))}
         </div>
+      </motion.div>
+
+      {/* Theme Transition — Serpantinum wallpaper-style switching */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.4 }}
+      >
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <h4 className="font-medium text-text-secondary flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-accent" />
+            Theme Transition
+          </h4>
+          <div className="flex gap-1 p-1 rounded-full bg-input border border-border">
+            <button
+              onClick={() => updateTransition({ mode: 'random' })}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-caption font-semibold transition-all',
+                transition.mode === 'random' ? 'bg-accent text-on-accent shadow-sm' : 'text-text-muted'
+              )}
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              Surprise me
+            </button>
+            <button
+              onClick={() => updateTransition({ mode: 'custom' })}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-caption font-semibold transition-all',
+                transition.mode === 'custom' ? 'bg-accent text-on-accent shadow-sm' : 'text-text-muted'
+              )}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Custom
+            </button>
+          </div>
+        </div>
+        <p className="text-caption text-text-muted normal-case mb-3">
+          {transition.mode === 'random'
+            ? 'Every switch plays a random transition from the full set — tap Light/Dark to try it.'
+            : 'Pick exactly which transition plays on every theme switch.'}
+        </p>
+
+        <div className="grid grid-cols-2 min-[420px]:grid-cols-3 sm:grid-cols-5 gap-2.5">
+          {transitionEffects.map(effect => {
+            const selected = transition.mode === 'custom' && transition.custom === effect.id;
+            return (
+              <motion.button
+                key={effect.id}
+                whileTap={{ scale: 0.94 }}
+                onClick={() => updateTransition({ mode: 'custom', custom: effect.id })}
+                className={cn(
+                  'group relative p-2 rounded-2xl border-2 transition-all text-left',
+                  selected ? 'border-accent bg-accent-light' : 'border-border hover:border-accent/50'
+                )}
+                aria-pressed={selected}
+                aria-label={`Use ${effect.label} transition`}
+              >
+                <div className={cn('tx-swatch mb-2 aspect-[4/3] w-full', effect.swatch)} aria-hidden>
+                  <div className="tx-swatch-new" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <effect.icon className="w-4 h-4 text-text-secondary flex-shrink-0" strokeWidth={2.2} />
+                  <span className="text-caption font-semibold text-text">{effect.label}</span>
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+
+        {/* Per-effect options, only in Custom mode */}
+        {transition.mode === 'custom' && (
+          <>
+            {transition.custom === 'wipe' && (
+              <div className="mt-3">
+                <p className="text-caption font-medium text-text-secondary mb-1.5">Direction</p>
+                <div className="flex gap-1 flex-wrap">
+                  {(['random', 'horizontal', 'vertical'] as WipeOrientation[]).map(option => (
+                    <button
+                      key={option}
+                      onClick={() => updateTransition({ wipeOrientation: option })}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full text-caption font-semibold border transition-all',
+                        transition.wipeOrientation === option
+                          ? 'border-accent bg-accent-light text-accent'
+                          : 'border-border text-text-secondary'
+                      )}
+                    >
+                      {option === 'random' ? 'Random' : option === 'horizontal' ? 'Horizontal' : 'Vertical'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {transition.custom === 'circle' && (
+              <div className="mt-3">
+                <p className="text-caption font-medium text-text-secondary mb-1.5">Origin</p>
+                <div className="flex gap-1 flex-wrap">
+                  {(['random', 'center'] as CircleOrigin[]).map(option => (
+                    <button
+                      key={option}
+                      onClick={() => updateTransition({ circleOrigin: option })}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full text-caption font-semibold border transition-all',
+                        transition.circleOrigin === option
+                          ? 'border-accent bg-accent-light text-accent'
+                          : 'border-border text-text-secondary'
+                      )}
+                    >
+                      {option === 'random' ? 'Random' : 'Center'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {transition.custom === 'swipe' && (
+              <div className="mt-3">
+                <p className="text-caption font-medium text-text-secondary mb-1.5">Direction</p>
+                <div className="flex gap-1 flex-wrap">
+                  {(['random', 'left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right'] as SwipeDirection[]).map(option => (
+                    <button
+                      key={option}
+                      onClick={() => updateTransition({ swipeDirection: option })}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full text-caption font-semibold border transition-all',
+                        transition.swipeDirection === option
+                          ? 'border-accent bg-accent-light text-accent'
+                          : 'border-border text-text-secondary'
+                      )}
+                    >
+                      {option === 'random' ? 'Random' : option.split('-').map(s => s[0].toUpperCase() + s.slice(1)).join('-')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {transition.custom === 'fade' && (
+              <p className="text-caption text-text-muted normal-case mt-3">Fade has no options — it just dissolves.</p>
+            )}
+            {transition.custom === 'paint' && (
+              <p className="text-caption text-text-muted normal-case mt-3">Paint blooms from where you tap — no options, just organic colonies spreading.</p>
+            )}
+          </>
+        )}
       </motion.div>
     </motion.div>
   );
@@ -629,15 +1033,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         transition={{ type: 'spring', stiffness: 300, damping: 20 }}
         className="text-center py-4"
       >
-        <motion.div
-          initial={{ scale: 0, rotate: -180 }}
-          animate={{ scale: 1, rotate: 0 }}
-          transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 20 }}
-          className="w-20 h-20 rounded-2xl bg-gradient-to-br from-accent to-secondary flex items-center justify-center mx-auto mb-4"
-        >
-          <Heart className="w-10 h-10 text-on-accent" />
-        </motion.div>
-        <h3 className="text-h2 font-bold text-text">MeMo 💕</h3>
+        <motion.img
+          src="/memo-logo.png"
+          alt="MeMo"
+          draggable={false}
+          initial={{ scale: 0, rotate: -180, opacity: 0 }}
+          animate={{ scale: 1, rotate: 0, opacity: 1 }}
+          transition={{ delay: 0.2, type: 'spring', stiffness: 220, damping: 20 }}
+          className="w-28 h-28 rounded-2xl object-cover ring-1 ring-white/10 mx-auto mb-4 select-none pointer-events-none drop-shadow-[0_6px_24px_rgba(235,154,192,0.45)]"
+        />
+        <h3 className="text-h2 font-bold text-text">MeMo</h3>
         <p className="text-text-muted mt-1">Version 1.0.0</p>
         <p className="text-caption text-text-muted mt-2">Your private couple space</p>
       </motion.div>
@@ -663,6 +1068,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p className="font-medium text-text">Privacy First</p>
                 <p className="text-caption text-text-muted">Local-only, no cloud, no tracking</p>
               </div>
+            </div>
+          </div>
+        </MotionGlassCard>
+
+        <MotionGlassCard className="p-4">
+          <div className="flex items-center gap-3">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 20 }}
+              className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center flex-shrink-0"
+            >
+              <Volume2 className="w-5 h-5 text-accent" />
+            </motion.div>
+            <div className="min-w-0">
+              <p className="font-medium text-text">AI Voice</p>
+              <p className="text-caption text-text-muted normal-case">Uses Nara Mini v1 by Nara contributors, a Kokoro-based Burmese and English speech model. <a href="https://naraaudio.app" target="_blank" rel="noreferrer" className="text-accent hover:underline">naraaudio.app</a> · <a href="https://huggingface.co/YeeNyunn/nara-mini-v1" target="_blank" rel="noreferrer" className="text-accent hover:underline">Hugging Face</a>. Licensed under Apache 2.0.</p>
             </div>
           </div>
         </MotionGlassCard>
@@ -704,6 +1126,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
         </MotionGlassCard>
+
+        <MotionGlassCard className="p-4">
+          <div className="flex items-center gap-3">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 20 }}
+              className="w-10 h-10 rounded-xl bg-secondary-light flex items-center justify-center flex-shrink-0"
+            >
+              <Waves className="w-5 h-5 text-secondary" />
+            </motion.div>
+            <div className="min-w-0">
+              <p className="font-medium text-text">Serpantinum transitions</p>
+              <p className="text-caption text-text-muted normal-case">Theme switching animations adapted from the Serpantinum shell&apos;s wallpaper effects. <a href="https://github.com/Xennus352/serpantinum" target="_blank" rel="noreferrer" className="text-accent hover:underline">github.com/Xennus352/serpantinum</a> · GNU AGPL-3.0</p>
+            </div>
+          </div>
+        </MotionGlassCard>
+
+        <MotionGlassCard className="p-4">
+          <div className="flex items-center gap-3">
+            <img
+              src="/memo-logo.png"
+              alt="MeMo"
+              draggable={false}
+              className="w-12 h-12 rounded-2xl object-cover ring-1 ring-white/10 flex-shrink-0 select-none"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-text">App Updates</p>
+              <p className="text-caption text-text-muted normal-case">Version 1.0.0 · updates ship through GitHub Releases</p>
+            </div>
+            <button
+              onClick={() => useUpdaterStore.getState().checkNow()}
+              className="flex-shrink-0 px-4 py-2.5 rounded-xl text-caption font-semibold bg-accent-light text-accent hover:brightness-105 transition-all whitespace-nowrap"
+            >
+              Check for updates
+            </button>
+          </div>
+        </MotionGlassCard>
       </motion.div>
 
       <motion.div
@@ -712,9 +1172,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         transition={{ delay: 0.3, duration: 0.4 }}
         className="pt-4 border-t border-border"
       >
-        <p className="text-caption text-text-muted text-center">
-          Made with ❤️ for couples everywhere
-        </p>
+        <div className="pt-2 flex items-center justify-center gap-1.5 text-caption text-text-muted normal-case tracking-wide">
+          <span>Made with love 💕</span>
+          <span className="uppercase font-semibold text-text-secondary">BY SMK</span>
+        </div>
       </motion.div>
     </motion.div>
   );
@@ -744,6 +1205,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
             className="p-1 rounded-lg hover:bg-surface-subtle transition-colors"
+            aria-label="Close settings"
           >
             <X className="w-5 h-5 text-text-muted" />
           </motion.button>

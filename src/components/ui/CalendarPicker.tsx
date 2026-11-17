@@ -78,21 +78,21 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
   const isToday = (day: number) =>
     dateAt(year, month, day) === `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
 
-  if (!isOpen) return null;
-
   const modal = (
     <motion.div
+      key="calendar-picker"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
       className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm p-3 sm:p-4"
       onClick={onClose}
     >
       <motion.div
-        initial={{ opacity: 0, y: 80, scale: 0.96 }}
+        initial={{ opacity: 0, y: 90, scale: 0.92 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 40, scale: 0.96 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+        exit={{ opacity: 0, y: 60, scale: 0.94 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
         className="w-full max-w-sm"
         onClick={e => e.stopPropagation()}
       >
@@ -236,7 +236,7 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
     </motion.div>
   );
 
-  return createPortal(modal, document.body);
+  return createPortal(<AnimatePresence>{isOpen && modal}</AnimatePresence>, document.body);
 };
 
 interface DatePickerFieldProps {

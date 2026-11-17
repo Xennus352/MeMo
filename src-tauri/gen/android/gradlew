@@ -1,0 +1,17 @@
+#!/bin/bash
+# Offline shim: delegate to the system Gradle (9.9.0) — the pinned 9.6.1
+# distribution cannot be downloaded on this machine (services.gradle.org is blocked).
+args=()
+project_dir=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --project-dir) project_dir="$2"; shift 2 ;;
+    --project-dir=*) project_dir="${1#*=}"; shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+if [ -n "$project_dir" ]; then
+  exec gradle -p "$project_dir" "${args[@]}"
+else
+  exec gradle "${args[@]}"
+fi

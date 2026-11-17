@@ -37,35 +37,29 @@
     ],
     "android": {
       "minSdkVersion": 24,
-      "targetSdkVersion": 34,
-      "versionCode": 1,
-      "permissions": [
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
-        "android.permission.USE_EXACT_ALARM",
-        "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.ACCESS_WIFI_STATE"
-      ]
+      "versionCode": 1
     },
-    "ios": {
+    "iOS": {
       "minimumSystemVersion": "15.0",
-      "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"],
-        "NSLocalNetworkUsageDescription": "Needed for device pairing discovery",
-        "NSUserTrackingUsageDescription": "This app does not track you",
-        "ITSAppUsesNonExemptEncryption": false
-      }
+      "infoPlist": "Info.plist"
     }
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:hourglass.db"]
+      "preload": [
+        "sqlite:hourglass.db"
+      ]
     },
-    "notification": {},
-    "store": {},
-    "clipboardManager": {}
+    "http": {
+      "scopeRedirects": true
+    },
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM2NjVFQzFGRTI0MzY1MTgKUldRWVpVUGlIK3hseGp0dEFydXkxSGJ1b3hraXFkQi90dlc0bUJUVGZ3bm96SXZwOWo0WG1rd1MK",
+      "endpoints": [
+        "https://github.com/Xennus352/MeMo/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

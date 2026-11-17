@@ -35,12 +35,31 @@ export interface Milestone {
   updatedAt: string;
 }
 
+/** A note one partner pins for the other, with a time to alert them. */
+export interface Notice {
+  id: string;
+  /** What the partner will read / hear */
+  message: string;
+  /** When the alert should fire (ISO-8601). For repeat notices this is the first alert. */
+  remindAt: string;
+  /** Minutes between repeats; 0 = one-time */
+  repeatMinutes: number;
+  /** false once a one-time notice has fired, or either partner stopped a repeat */
+  active: boolean;
+  createdBy: UserRole;
+  synced: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Anniversary {
   id: string;
   date: string;
   label: string;
   isPrimary: boolean;
   createdAt: string;
+  /** Optional so rows saved before the sync rollout still type-check; sync falls back to createdAt */
+  updatedAt?: string;
 }
 
 export interface DevicePairingData {
@@ -74,10 +93,13 @@ export interface NotificationSettings {
   id: string;
   periodReminder: boolean;
   periodReminderDays: number;
+  /** Set when the user's period has ended and a bright "she is strong" note goes out */
+  periodEndedReminder: boolean;
   ovulationReminder: boolean;
   milestoneReminder: boolean;
   milestoneReminderDays: number;
   anniversaryReminder: boolean;
+  anniversaryReminderDays: number;
   updatedAt: string;
 }
 
@@ -86,6 +108,11 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   language: string;
   widgetEnabled: boolean;
+  /**
+   * JSON-serialized theme transition config (mode/random, custom effect,
+   * per-effect options). Parse with parseThemeTransition().
+   */
+  themeTransition: string;
   updatedAt: string;
 }
 

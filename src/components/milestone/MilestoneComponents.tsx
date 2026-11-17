@@ -6,6 +6,8 @@ import { GlassView, Button, GlassCard, MotionGlassCard, ModalBackdrop } from '@/
 import { ParticleBurst } from '@/components/ui/ParticleBurst';
 import { DatePickerField } from '@/components/ui/CalendarPicker';
 import { Milestone, Anniversary, UserRole } from '@/types';
+import { useUserStore, usePresenceStore } from '@/stores';
+import { useMilestoneFlash, isJustCreated, milestoneSheetStyle } from './milestoneEffects';
 import { createPortal } from 'react-dom';
 
 interface MilestoneCardProps {
@@ -15,6 +17,8 @@ interface MilestoneCardProps {
   onDelete: (id: string) => void;
   onShare: (milestone: Milestone) => void;
   className?: string;
+  /** Hide the trash button (e.g., read-mostly contexts) */
+  showDelete?: boolean;
 }
 
 export const MilestoneCard: React.FC<MilestoneCardProps> = ({
@@ -24,19 +28,70 @@ export const MilestoneCard: React.FC<MilestoneCardProps> = ({
   onDelete,
   onShare,
   className,
+  showDelete = true,
 }) => {
   const isOwner = milestone.createdBy === currentUserRole;
+  const myName = useUserStore(state => state.profile?.name);
+  const partnerName = usePresenceStore(state => state.partnerName);
+  const creatorName = milestone.createdBy === currentUserRole
+    ? (myName ?? 'You')
+    : (partnerName ?? 'Partner');
   const daysUntil = diffDays(dateKey(), milestone.date);
   const isPast = daysUntil < 0;
   const isToday = daysUntil === 0;
   const isUpcoming = daysUntil > 0 && daysUntil <= 30;
+  const editFlash = useMilestoneFlash(milestone.updatedAt);
+  const [born] = useState(() => isJustCreated(milestone.createdAt));
 
   return (
-    <MotionGlassCard
-      className={cn('p-4', isUpcoming && 'ring-2 ring-secondary/30', className)}
-      interactive
+    <motion.div
+      initial={{ opacity: 0, y: 46, scale: 0.78 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 240, damping: 17, mass: 1 }}
+      whileTap={{ scale: 0.97 }}
       onClick={() => onEdit(milestone)}
+      className={cn(
+        'relative overflow-hidden cursor-pointer card card-interactive p-4',
+        isUpcoming && 'ring-2 ring-secondary/30',
+        className
+      )}
     >
+      {/* Born flourish: pink glow that blooms once for a freshly created card,
+          wherever the card appears (local create or arriving through sync) */}
+      {born && (
+        <motion.div
+          key="born"
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          initial={{ opacity: 0.9 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 1.5, ease: 'easeOut' }}
+          style={{ background: 'radial-gradient(120% 130% at 50% 0%, rgba(235,154,192,0.55) 0%, rgba(186,128,240,0.3) 45%, transparent 75%)' }}
+        />
+      )}
+      {/* Edit flash: light sweep + accent ring, re-keyed per edit so it replays */}
+      {editFlash > 0 && (
+        <motion.div key={`sheen-${editFlash}`} aria-hidden className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-[inherit]">
+          <motion.div
+            className="absolute inset-y-0 w-1/2 -skew-x-12"
+            style={milestoneSheetStyle}
+            initial={{ x: '-130%' }}
+            animate={{ x: '340%' }}
+            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+          />
+        </motion.div>
+      )}
+      {editFlash > 0 && (
+        <motion.div
+          key={`ring-${editFlash}`}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-10 rounded-[inherit] border-2 border-accent"
+          style={{ boxShadow: '0 0 26px rgba(235,154,192,0.5)' }}
+          initial={{ opacity: 0, scale: 1 }}
+          animate={{ opacity: [0, 0.9, 0], scale: [1, 1.025, 1] }}
+          transition={{ duration: 1.1, times: [0, 0.25, 1], ease: 'easeOut' }}
+        />
+      )}
       <div className="flex items-start gap-4">
         <motion.div
           initial={false}
@@ -74,14 +129,16 @@ export const MilestoneCard: React.FC<MilestoneCardProps> = ({
                 >
                   <Edit2 className="w-4 h-4 text-text-muted" />
                 </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.9 }}
-                  onClick={e => { e.stopPropagation(); onDelete(milestone.id); }}
-                  className="p-2 rounded-lg hover:bg-error-light hover:text-error transition-colors"
-                  aria-label="Delete"
-                >
-                  <Trash2 className="w-4 h-4 text-text-muted" />
-                </motion.button>
+                {showDelete && (
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={e => { e.stopPropagation(); onDelete(milestone.id); }}
+                    className="p-2 rounded-lg hover:bg-error-light hover:text-error transition-colors"
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="w-4 h-4 text-text-muted" />
+                  </motion.button>
+                )}
               </div>
             )}
           </div>
@@ -99,14 +156,13 @@ export const MilestoneCard: React.FC<MilestoneCardProps> = ({
               <Calendar className="w-3 h-3" />
               {isToday ? 'Today' : isPast ? `${Math.abs(daysUntil)} days ago` : `${daysUntil} days left`}
             </span>
-            <span className="flex items-center gap-1">
-              <span>{milestone.createdBy === 'girl' ? '👧' : '👦'}</span>
-              {milestone.createdBy === 'girl' ? 'Her' : 'His'}
+            <span className="px-2 py-0.5 rounded-full bg-input text-text-secondary normal-case font-medium">
+              {creatorName}
             </span>
           </div>
         </div>
       </div>
-    </MotionGlassCard>
+    </motion.div>
   );
 };
 
@@ -370,6 +426,7 @@ export const MilestoneModal: React.FC<MilestoneModalProps> = ({
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
             className="p-1 rounded-lg hover:bg-surface-subtle transition-colors"
+            aria-label="Close"
           >
             <X className="w-5 h-5 text-text-muted" />
           </motion.button>
@@ -415,7 +472,7 @@ export const MilestoneModal: React.FC<MilestoneModalProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
                 transition={{ duration: 0.2 }}
-                className="absolute bottom-full left-0 right-0 mb-2 p-3 rounded-xl bg-surface-elevated/95 backdrop-blur-xl border border-border-strong shadow-xl z-10 max-h-60 overflow-y-auto"
+                className="absolute bottom-full left-0 right-0 mb-2 p-3 rounded-xl bg-surface-elevated/95 backdrop-blur-sm border border-border-strong shadow-xl z-10 max-h-60 overflow-y-auto"
               >
                 <div className="grid grid-cols-8 gap-1">
                   {EMOJIS.map(e => (
@@ -554,6 +611,7 @@ export const AnniversaryModal: React.FC<AnniversaryModalProps> = ({
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
             className="p-1 rounded-lg hover:bg-surface-subtle transition-colors"
+            aria-label="Close"
           >
             <X className="w-5 h-5 text-text-muted" />
           </motion.button>

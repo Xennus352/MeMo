@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Link } from 'react-router-dom';
-import { ChevronLeft, Heart, Users, Share2, CheckCircle, ShieldCheck, Smartphone, Link as LinkIcon, Unlink, Sparkles, Lock, CloudOff, EyeOff, ListOrdered } from 'lucide-react';
-import { cn, formatDateKeyFull } from '@/utils/helpers';
+import { Link, useNavigate } from 'react-router-dom';
+import { ChevronLeft, Heart, Users, Share2, CheckCircle, ShieldCheck, Smartphone, Link as LinkIcon, Unlink, Sparkles, Lock, CloudOff, EyeOff, ListOrdered, Plus, CalendarDays, Droplet } from 'lucide-react';
+import { cn, formatDateKeyFull, formatDateKey, diffDays, dateKey } from '@/utils/helpers';
 import { Button, MotionGlassCard } from '@/components/ui/GlassComponents';
 import { PairingModal } from '@/components/onboarding/PairingModal';
 import { useCustomModals, useToast } from '@/components/ui/CustomModals';
 import { useUserStore } from '@/stores';
 import { usePairingStore } from '@/stores';
+import { useMilestoneStore } from '@/stores';
+import { useAnniversaryStore } from '@/stores';
+import { usePeriodStore } from '@/stores';
+import { usePresenceStore } from '@/stores';
+import { anniversaryOccurrence } from '@/lib/reminders';
+import { unpairRemoteDevice, db } from '@/lib/tauri';
+import { PresenceChip } from '@/components/ui/PresenceChip';
 
 const STEPS = [
   { icon: Heart, title: 'Generate Code', desc: 'Create a 6-digit code that expires in 24 hours' },
@@ -48,6 +55,13 @@ const paneVariants = {
 export const PairingScreen: React.FC = () => {
   const { profile, deviceId, setPairedDevice, clearPairingCode } = useUserStore();
   const { pair, loadPair } = usePairingStore();
+  const milestoneTotal = useMilestoneStore(state => state.total);
+  const milestoneItems = useMilestoneStore(state => state.items);
+  const anniversaryItems = useAnniversaryStore(state => state.items);
+  const primaryAnniversary = useAnniversaryStore(state => state.primary);
+  const predictions = usePeriodStore(state => state.predictions);
+  const partnerName = usePresenceStore(state => state.partnerName);
+  const navigate = useNavigate();
   const { showConfirm } = useCustomModals();
   const { showToast } = useToast();
   const [showModal, setShowModal] = useState<'generate' | 'enter' | null>(null);
@@ -83,13 +97,28 @@ export const PairingScreen: React.FC = () => {
       confirmText: 'Unpair',
       cancelText: 'Cancel',
       onConfirm: async () => {
+        // Best-effort removal from the shared registry so the other browser agrees
+        await unpairRemoteDevice(profile?.deviceId || '');
+        usePresenceStore.getState().clearPartnerName();
         await setPairedDevice('');
         await clearPairingCode();
+        // Clear the cached couple_pair row so polling doesn't re-insert it
+        await db.transaction([{ sql: 'DELETE FROM couple_pair' }]);
         await loadPair();
         showToast('Devices unpaired', 'success');
       },
     });
   };
+
+  const initialOf = (name?: string | null) => (name?.trim().charAt(0) || '?').toUpperCase();
+  const myName = profile?.name?.trim() || 'Me';
+  const milestoneCount = milestoneTotal ?? milestoneItems.length;
+  const anniversaryCount = anniversaryItems.length;
+  const cycleDay = predictions?.cycleDay ?? null;
+  const anniversaryKey = primaryAnniversary?.date ?? pair?.anniversaryDate ?? dateKey();
+  const todayKey = dateKey();
+  const togetherDays = Math.max(1, diffDays(anniversaryKey, todayKey) + 1);
+  const anniversaryCountdown = diffDays(todayKey, anniversaryOccurrence(anniversaryKey, todayKey));
 
   const roleEmoji = profile?.role === 'boy' ? '👦' : '👧';
   const roleLabel = profile?.role === 'boy' ? 'Boy' : 'Girl';
@@ -97,14 +126,14 @@ export const PairingScreen: React.FC = () => {
   return (
     <div className="min-h-dvh bg-bg pb-40 safe-bottom">
       {/* Status Bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-xl" />
+      <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-sm" />
 
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-xl border-b border-border/60"
+        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-sm border-b border-border/60"
       >
         <div className="app-header-inner flex items-center justify-between">
           <Link to="/" className="p-2 rounded-xl hover:bg-surface-subtle transition-colors" aria-label="Back to home">
@@ -116,7 +145,7 @@ export const PairingScreen: React.FC = () => {
       </motion.div>
 
       {/* Main Content */}
-      <div className="app-content pt-24 pb-4 px-4 space-y-4">
+      <div className="app-content pb-4 px-4 space-y-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 96px)' }}>
         {/* In-page tabs */}
         <div
           role="tablist"
@@ -178,53 +207,76 @@ export const PairingScreen: React.FC = () => {
         {activeTab === 'connect' && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           {pair ? (
-            <MotionGlassCard className="p-5 sm:p-7" elevated>
-              <div className="flex items-center gap-4 sm:gap-5">
-                <motion.div
-                  initial={{ scale: 0, rotate: -180 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 20 }}
-                  className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'conic-gradient(from 210deg, var(--color-accent), var(--color-secondary), var(--color-accent))' }}
-                >
-                  <div className="w-[calc(100%-5px)] h-[calc(100%-5px)] rounded-full bg-surface flex items-center justify-center">
-                    <Users className="w-7 h-7 sm:w-8 sm:h-8 text-accent" />
-                  </div>
-                </motion.div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-h2 font-bold text-text leading-tight">Paired Successfully</h2>
-                  <p className="text-text-muted text-body-sm mt-1">You're connected with your partner</p>
-                </div>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-caption font-semibold bg-success-light text-success flex-shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                  Connected
-                </span>
-              </div>
+            <div className="space-y-4">
+              {/* Hero — who you are, together */}
+              <div className="relative overflow-hidden rounded-3xl border border-accent/25 bg-gradient-to-br from-accent/20 via-secondary/15 to-transparent p-5 sm:p-6">
+                <div aria-hidden className="absolute -top-20 -right-20 w-64 h-64 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(235,154,192,0.4), transparent 70%)' }} />
+                <div aria-hidden className="absolute -bottom-24 -left-20 w-64 h-64 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(186,128,240,0.32), transparent 70%)' }} />
 
-              <div className="mt-6 grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
-                <div className="flex items-center gap-3 p-4 rounded-2xl bg-input border border-border">
-                  <span className="w-11 h-11 rounded-xl bg-secondary-light flex items-center justify-center text-xl flex-shrink-0">💍</span>
+                <div className="relative flex items-center gap-4">
+                  <div className="flex -space-x-4 flex-shrink-0">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-lg sm:text-xl font-extrabold text-white/95 ring-2 ring-surface" style={{ background: 'linear-gradient(135deg, var(--color-accent), var(--color-secondary))' }}>{initialOf(myName)}</div>
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-lg sm:text-xl font-extrabold text-white/95 ring-2 ring-surface" style={{ background: 'linear-gradient(135deg, var(--color-secondary), var(--color-accent))' }}>{initialOf(partnerName ?? 'Partner')}</div>
+                  </div>
                   <div className="min-w-0">
-                    <p className="text-caption text-text-muted normal-case">Anniversary</p>
-                    <p className="font-semibold text-text truncate">{formatDateKeyFull(pair.anniversaryDate)}</p>
+                    <p className="text-[10px] tracking-[0.22em] uppercase text-accent/80 font-semibold">MeMo Couple</p>
+                    <h2 className="text-h3 sm:text-h2 font-extrabold tracking-tight text-text leading-tight truncate">
+                      {myName} <span className="text-accent">&amp;</span> {partnerName ?? 'Partner'}
+                    </h2>
+                    <div className="mt-2"><PresenceChip compact /></div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 p-4 rounded-2xl bg-input border border-border">
-                  <span className="w-11 h-11 rounded-xl bg-accent-light flex items-center justify-center text-xl flex-shrink-0">💑</span>
-                  <div className="min-w-0">
-                    <p className="text-caption text-text-muted normal-case">Paired Since</p>
-                    <p className="font-semibold text-text truncate">{formatDateKeyFull(pair.createdAt.split('T')[0])}</p>
+
+                <div className="relative mt-5 pt-5 border-t border-white/5 flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] tracking-[0.22em] uppercase text-text-muted">Together for</p>
+                    <p className="text-5xl sm:text-6xl font-black tracking-tighter leading-none text-text mt-1">{togetherDays}<span className="text-2xl align-top text-accent ml-1">d</span></p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] tracking-[0.22em] uppercase text-text-muted">Anniversary</p>
+                    <p className="font-bold text-text leading-tight mt-1">{formatDateKey(anniversaryKey, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                    <p className="text-caption font-semibold text-accent mt-0.5">{anniversaryCountdown === 0 ? 'Today! 🎉' : `${anniversaryCountdown}d to go 🎉`}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-6">
-                <Button variant="secondary" onClick={handleUnpair} className="w-full min-h-12" size="lg">
-                  <Unlink className="w-4 h-4 mr-2" />
-                  Unpair Devices
-                </Button>
+              {/* Stats — real counts, nothing decorative */}
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="rounded-2xl border border-border bg-input p-3 text-center">
+                  <Heart className="w-5 h-5 text-accent mx-auto" />
+                  <p className="text-xl sm:text-2xl font-extrabold text-text mt-1 leading-none">{milestoneCount}</p>
+                  <p className="text-[10px] tracking-[0.18em] uppercase text-text-muted mt-1">Memories</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-input p-3 text-center">
+                  <Sparkles className="w-5 h-5 text-secondary mx-auto" />
+                  <p className="text-xl sm:text-2xl font-extrabold text-text mt-1 leading-none">{anniversaryCount}</p>
+                  <p className="text-[10px] tracking-[0.18em] uppercase text-text-muted mt-1">Anniversaries</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-input p-3 text-center">
+                  <Droplet className="w-5 h-5 text-accent mx-auto" />
+                  <p className="text-xl sm:text-2xl font-extrabold text-text mt-1 leading-none">{cycleDay ?? '—'}</p>
+                  <p className="text-[10px] tracking-[0.18em] uppercase text-text-muted mt-1">Cycle Day</p>
+                </div>
               </div>
-            </MotionGlassCard>
+
+              {/* Quick actions */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <motion.button whileTap={{ scale: 0.97 }} onClick={() => navigate('/milestones')} className="flex items-center gap-3 p-4 rounded-2xl border border-accent/25 bg-accent-light text-left hover:brightness-105 transition">
+                  <Plus className="w-5 h-5 text-accent flex-shrink-0" />
+                  <span className="text-body-sm font-semibold text-text leading-tight">Add a<br />memory</span>
+                </motion.button>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={() => navigate('/')} className="flex items-center gap-3 p-4 rounded-2xl border border-border bg-input text-left hover:bg-surface-subtle transition">
+                  <CalendarDays className="w-5 h-5 text-secondary flex-shrink-0" />
+                  <span className="text-body-sm font-semibold text-text leading-tight">Open shared<br />calendar</span>
+                </motion.button>
+              </div>
+
+              {/* Unpair — de-emphasized, at the bottom */}
+              <button onClick={handleUnpair} className="w-full flex items-center justify-center gap-2 py-3 text-caption text-text-muted hover:text-error transition-colors">
+                <Unlink className="w-4 h-4" />
+                Unpair Devices
+              </button>
+            </div>
           ) : (
             <MotionGlassCard className="p-6 sm:p-8" elevated>
               <div className="text-center">

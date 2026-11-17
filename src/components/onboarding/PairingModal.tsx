@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { X, ChevronLeft, ChevronRight, Heart, Users, Share2, Copy, CheckCircle, AlertCircle, Calendar, ArrowRight, Shield, Link as LinkIcon, Unlink, Smartphone } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Heart, Users, Share2, Copy, CheckCircle, AlertCircle, Calendar, ArrowRight, Shield, Link as LinkIcon, Unlink, Smartphone, ClipboardPaste } from 'lucide-react';
 import { cn, dateKey, formatDateKeyFull } from '@/utils/helpers';
 import { GlassView, Button, GlassCard, MotionGlassCard, ModalBackdrop } from '@/components/ui/GlassComponents';
 import { UserRole } from '@/types';
 import { createPortal } from 'react-dom';
 import { usePairingStore } from '@/stores';
 import { useUserStore } from '@/stores';
+import { useToast } from '@/components/ui/CustomModals';
+import { PAIRING_ERROR_MESSAGES } from '@/stores/pairingStore';
 
 interface PairingModalProps {
   isOpen: boolean;
@@ -29,6 +31,7 @@ export const PairingModal: React.FC<PairingModalProps> = ({
 
   const { generateCode, enterCode, shareCode, copyCode, clearError } = usePairingStore();
   const { profile, deviceId } = useUserStore();
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (isOpen) {
@@ -73,8 +76,9 @@ export const PairingModal: React.FC<PairingModalProps> = ({
           partnerRole: result.pairedRole || (profile?.role === 'girl' ? 'boy' : 'girl'),
         });
         setStep('success');
+        showToast('Devices paired 💕', 'success');
       } else {
-        setError('Invalid or expired code. Please check and try again.');
+        setError(PAIRING_ERROR_MESSAGES[result.reason ?? ''] ?? 'Invalid or expired code. Please check and try again.');
       }
     } catch (err) {
       setError('Failed to pair. Please try again.');
@@ -83,24 +87,123 @@ export const PairingModal: React.FC<PairingModalProps> = ({
     }
   };
 
+  // Remember the code this device just copied/shared so "Paste Code" can
+  // fill it later without any permission prompt.
+  const rememberCopiedCode = (cleanCode: string) => {
+    try {
+      localStorage.setItem('memo_last_copied_code', cleanCode);
+    } catch {
+      // private mode — the direct clipboard read in Paste still works
+    }
+  };
+
   const handleShare = async () => {
-    if (generatedCode) {
-      // Share clean code without spaces
-      const cleanCode = generatedCode.replace(/\s/g, '');
-      await shareCode(cleanCode);
+    if (!generatedCode) return;
+    const cleanCode = generatedCode.replace(/\s/g, '');
+
+    // Real share sheet — the partner picks Telegram / Gmail / SMS / … from there
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: 'MeMo 💕',
+          text: `Join me on MeMo 💕 — our cycle, anniversaries & milestones, together.\n\nPairing code: ${cleanCode}\n(the code expires in 24 hours)`,
+        });
+        rememberCopiedCode(cleanCode);
+        showToast('Code shared 💕', 'success');
+        return;
+      } catch (error) {
+        if ((error as Error | undefined)?.name === 'AbortError') return; // user dismissed
+        // fall back to clipboard below
+      }
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cleanCode);
+      } else {
+        const input = document.getElementById('pairing-code-hidden') as HTMLInputElement | null;
+        input?.select();
+        document.execCommand('copy');
+      }
+      rememberCopiedCode(cleanCode);
+      showToast('Code copied — share it from your clipboard', 'success');
+    } catch {
+      showToast('Could not share the code — try copying it', 'error');
     }
   };
 
   const handleCopy = async () => {
-    if (generatedCode) {
-      // Copy clean code without spaces
-      const cleanCode = generatedCode.replace(/\s/g, '');
-      await copyCode(cleanCode);
-      // Also select the hidden input for visual feedback
-      const hiddenInput = document.getElementById('pairing-code-hidden') as HTMLInputElement | null;
-      if (hiddenInput) {
-        hiddenInput.select();
+    if (!generatedCode) return;
+    const cleanCode = generatedCode.replace(/\s/g, '');
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cleanCode);
+      } else {
+        const input = document.getElementById('pairing-code-hidden') as HTMLInputElement | null;
+        input?.select();
+        document.execCommand('copy');
       }
+      rememberCopiedCode(cleanCode);
+      const hiddenInput = document.getElementById('pairing-code-hidden') as HTMLInputElement | null;
+      if (hiddenInput) hiddenInput.select();
+      showToast('Code copied 💕', 'success');
+    } catch {
+      showToast('Could not copy — long-press the code to copy it', 'error');
+    }
+  };
+
+  // Read the clipboard and fill the 6 boxes — but only silently when the user
+  // has already granted clipboard-read access. Otherwise focus box 1 and let
+  // them paste with Ctrl/Cmd+V. Never triggers a native permission prompt.
+  // Fill the 6 boxes from a raw clipboard string
+  const fillFromClipboardText = (raw: string) => {
+    const clean = (raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    if (clean.length !== 6) return false;
+    setEnteredCode(clean);
+    setError('');
+    return true;
+  };
+
+  const handlePaste = async () => {
+    // Try the clipboard first — on a real user tap most browsers fill this in
+    // silently. If the browser says no, fall back to the code this device last
+    // copied inside the app. No permission popup, no Ctrl+V instructions.
+    let readOk = false;
+    try {
+      const raw = await navigator.clipboard.readText();
+      readOk = true;
+      if (fillFromClipboardText(raw)) {
+        showToast('Code pasted 💕', 'success');
+        return;
+      }
+      showToast("Clipboard doesn't hold a 6-character code", 'error');
+      return;
+    } catch {
+      // clipboard read blocked — fall back to the in-app memory below
+    }
+
+    if (!readOk) {
+      try {
+        const saved = localStorage.getItem('memo_last_copied_code');
+        if (saved && fillFromClipboardText(saved)) {
+          showToast('Code pasted 💕', 'success');
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    showToast('Nothing to paste yet — copy the code your partner shared first', 'error');
+  };
+
+  // Universal paste handler for the code grid: works with Ctrl/Cmd+V,
+  // Android's paste suggestion, and long-press paste — no permission needed.
+  const handleCodeGridPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const text = e.clipboardData?.getData('text') ?? '';
+    if (fillFromClipboardText(text)) {
+      e.preventDefault();
+      showToast('Code pasted 💕', 'success');
     }
   };
 
@@ -118,6 +221,7 @@ export const PairingModal: React.FC<PairingModalProps> = ({
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
             className="p-1 rounded-lg hover:bg-surface-subtle transition-colors"
+            aria-label="Close"
           >
             <X className="w-5 h-5 text-text-muted" />
           </motion.button>
@@ -297,6 +401,7 @@ export const PairingModal: React.FC<PairingModalProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3, duration: 0.4 }}
                 className="flex items-center justify-center gap-1.5 sm:gap-3"
+                onPaste={handleCodeGridPaste}
               >
                 {Array.from({ length: 6 }).map((_, i) => (
                   <motion.input
@@ -334,24 +439,34 @@ export const PairingModal: React.FC<PairingModalProps> = ({
                 ))}
               </motion.div>
 
-              <Button 
-                variant="primary" 
-                onClick={handleEnter} 
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={handlePaste}
+                  className="w-full"
+                >
+                  <ClipboardPaste className="w-4 h-4 mr-2" />
+                  Paste Code
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep('generate')}
+                  className="w-full"
+                >
+                  <ChevronLeft className="w-4 h-4 mr-2" />
+                  Generate
+                </Button>
+              </div>
+
+              <Button
+                variant="primary"
+                onClick={handleEnter}
                 loading={loading}
                 disabled={enteredCode.length !== 6}
                 className="w-full py-4"
                 size="lg"
               >
                 Pair Devices
-              </Button>
-
-              <Button 
-                variant="ghost" 
-                onClick={() => setStep('generate')}
-                className="w-full"
-              >
-                <ChevronLeft className="w-4 h-4 mr-2" />
-                Back to Generate
               </Button>
             </motion.div>
           )}

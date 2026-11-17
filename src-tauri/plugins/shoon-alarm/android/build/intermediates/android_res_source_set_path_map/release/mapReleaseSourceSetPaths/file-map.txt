@@ -1,0 +1,9 @@
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-pngs-0 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/build/generated/res/pngs/release
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-updated_navigation_xml-1 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/build/generated/updated_navigation_xml/release
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-mergeReleaseResources-2 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-mergeReleaseResources-3 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-release-4 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/build/intermediates/merged_res/release/mergeReleaseResources
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-release-5 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/build/intermediates/packaged_res/release/packageReleaseResources
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-main-6 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/src/main/res
+app.tauri.shoonalarm.tauri-plugin-shoon-alarm-release-7 /home/kazue/Projects/Personal/Memo/src-tauri/plugins/shoon-alarm/android/src/release/res
+gradleHome-0 /home/kazue/.gradle

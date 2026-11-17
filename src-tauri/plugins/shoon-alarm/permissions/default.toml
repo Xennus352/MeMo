@@ -1,0 +1,10 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Allows scheduling and cancelling Shoon speaking alarms (locked-phone reminder voice), speaking text aloud through the device TTS, and opening the notification settings page."
+permissions = [
+  "allow-schedule-shoon-alarm",
+  "allow-cancel-all-shoon-alarms",
+  "allow-speak-text",
+  "allow-open-notification-settings",
+]

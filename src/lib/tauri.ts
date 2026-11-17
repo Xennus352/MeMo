@@ -1,11 +1,12 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { invoke } from '@tauri-apps/api/core';
 import { 
-  UserProfile, 
-  CycleSettings, 
-  PeriodEntry, 
-  Milestone, 
-  Anniversary, 
+  UserProfile,
+  CycleSettings,
+  PeriodEntry,
+  Milestone,
+  Anniversary,
+  Notice,
   NotificationSettings, 
   AppSettings,
   SyncQueueItem,
@@ -38,6 +39,7 @@ interface WebDB {
   period_entries: PeriodEntry[];
   milestones: Milestone[];
   anniversaries: Anniversary[];
+  notices: Notice[];
   notification_settings: NotificationSettings[];
   app_settings: AppSettings[];
   sync_queue: SyncQueueItem[];
@@ -47,30 +49,76 @@ interface WebDB {
 
 type TableName = keyof WebDB;
 
+// Shared dev-server pairing registry: lets two browsers on this machine test
+// pairing end-to-end (localStorage is per-browser, so this is the same design
+// the app would use with a real backend). Unavailable on native builds and
+// static previews, where all paths fall back to the local database.
+const apiPost = async <T = unknown>(path: string, body?: unknown): Promise<T | null> => {
+  try {
+    const res = await fetch(`/api/pairing${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null; // API unreachable (native build / static preview / server down)
+  }
+};
+
+const apiGet = async <T = unknown>(path: string): Promise<T | null> => {
+  try {
+    const res = await fetch(`/api/pairing${path}`);
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+};
+
+const emptyWebDB = (): WebDB => ({
+  user_profile: [],
+  cycle_settings: [{ id: 'default', cycleLength: 28, periodLength: 5, updatedAt: new Date().toISOString() }],
+  period_entries: [],
+  milestones: [],
+  anniversaries: [],
+  notices: [],
+  notification_settings: [{
+    id: 'default',
+    periodReminder: true,
+    periodReminderDays: 1,
+    periodEndedReminder: true,
+    ovulationReminder: true,
+    milestoneReminder: true,
+    milestoneReminderDays: 3,
+    anniversaryReminder: true,
+    anniversaryReminderDays: 3,
+    updatedAt: new Date().toISOString(),
+  }],
+  app_settings: [{ id: 'default', theme: 'light', language: 'en', widgetEnabled: true, themeTransition: '{"mode":"random"}', updatedAt: new Date().toISOString() }],
+  sync_queue: [],
+  pairing_codes: [],
+  couple_pair: [],
+});
+
 const getWebDB = (): WebDB => {
+  // Backups taken before a table existed lack its key — backfill every table
+  // with the defaults instead of returning a half-shaped WebDB (crashes on push).
+  const defaults = emptyWebDB();
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) return JSON.parse(stored);
-  return {
-    user_profile: [],
-    cycle_settings: [{ id: 'default', cycleLength: 28, periodLength: 5, updatedAt: new Date().toISOString() }],
-    period_entries: [],
-    milestones: [],
-    anniversaries: [],
-    notification_settings: [{
-      id: 'default',
-      periodReminder: true,
-      periodReminderDays: 1,
-      ovulationReminder: true,
-      milestoneReminder: true,
-      milestoneReminderDays: 3,
-      anniversaryReminder: true,
-      updatedAt: new Date().toISOString(),
-    }],
-    app_settings: [{ id: 'default', theme: 'light', language: 'en', widgetEnabled: true, updatedAt: new Date().toISOString() }],
-    sync_queue: [],
-    pairing_codes: [],
-    couple_pair: [],
-  };
+  if (!stored) return defaults;
+  try {
+    const parsed = (JSON.parse(stored) ?? {}) as Partial<WebDB>;
+    const merged: Partial<WebDB> = { ...defaults };
+    for (const table of Object.keys(defaults) as Array<keyof WebDB>) {
+      const value = parsed[table];
+      merged[table] = (Array.isArray(value) ? value : defaults[table]) as never;
+    }
+    return merged as WebDB;
+  } catch {
+    return defaults;
+  }
 };
 
 const saveWebDB = (db: WebDB) => {
@@ -90,6 +138,7 @@ const BOOLEAN_COLUMNS = new Set([
   'milestoneReminder',
   'anniversaryReminder',
   'widgetEnabled',
+  'active',
 ]);
 
 const JSON_COLUMNS = new Set(['symptoms', 'payload']);
@@ -117,6 +166,67 @@ const normalizeRow = (row: unknown): unknown => {
     }
   }
   return normalized;
+};
+
+// ---- Cross-device sync tombstones ----------------------------------------------
+// Deletes can't be discovered by comparing snapshots (a missing row is
+// indistinguishable from one that never existed), so every user-driven delete
+// records a tombstone the sync layer uploads to the couple's shared store.
+const TOMBSTONE_KEY = 'memo_sync_tombstones';
+
+export interface Tombstone { table: string; id: string; deletedAt: string }
+
+export const recordTombstone = (table: string, id: string): void => {
+  try {
+    const deletedAt = new Date().toISOString();
+    const raw = localStorage.getItem(TOMBSTONE_KEY);
+    const list: Tombstone[] = raw ? JSON.parse(raw) : [];
+    const idx = list.findIndex(t => t.table === table && t.id === id);
+    if (idx >= 0) {
+      list[idx] = { table, id, deletedAt };
+    } else {
+      list.push({ table, id, deletedAt });
+    }
+    // Keep the tombstone list bounded — 500 deletes is way beyond real usage
+    localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(list.slice(-500)));
+  } catch {
+    // best-effort; an unsynced delete is the worst case
+  }
+};
+
+export const getTombstones = (): Tombstone[] => {
+  try {
+    const raw = localStorage.getItem(TOMBSTONE_KEY);
+    return raw ? (JSON.parse(raw) as Tombstone[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Every local write pings this registry. The app subscribes and pushes to the
+ * couple's shared store within ~250ms, so creates/edits/deletes/updates
+ * propagate between paired devices immediately instead of on the next poll.
+ */
+type SyncListener = () => void;
+const syncListeners = new Set<SyncListener>();
+
+/** Subscribe to local writes; returns an unsubscribe function. */
+export const onLocalMutation = (listener: SyncListener): (() => void) => {
+  syncListeners.add(listener);
+  return () => {
+    syncListeners.delete(listener);
+  };
+};
+
+const notifyMutation = (): void => {
+  syncListeners.forEach(listener => {
+    try {
+      listener();
+    } catch {
+      // a listener failure must never break a write
+    }
+  });
 };
 
 // Generic query function that works in both Tauri and web
@@ -180,13 +290,26 @@ const executeQuery = async (sql: string, params?: unknown[]): Promise<unknown[]>
       results = results.filter((row: Record<string, unknown>) =>
         conditions.every(({ col, op, val }) => {
           const rowVal = row[col];
-          if (op === '=') return String(rowVal) === val;
-          if (op === '>') return Number(rowVal) > Number(val);
-          if (op === '<') return Number(rowVal) < Number(val);
-          if (op === '>=') return Number(rowVal) >= Number(val);
-          if (op === '<=') return Number(rowVal) <= Number(val);
-          if (op === 'like') return String(rowVal).includes(val.replace(/%/g, ''));
-          return true;
+          const rowStr = String(rowVal);
+          const asNum = (x: string) => (/^-?\d+(\.\d+)?$/.test(x.trim()) ? Number(x) : null);
+          const rNum = asNum(rowStr);
+          const vNum = asNum(val);
+          if (op === 'like') return rowStr.includes(val.replace(/%/g, ''));
+          if (rNum !== null && vNum !== null) {
+            if (op === '=') return rNum === vNum;
+            if (op === '>') return rNum > vNum;
+            if (op === '<') return rNum < vNum;
+            if (op === '>=') return rNum >= vNum;
+            if (op === '<=') return rNum <= vNum;
+            return false;
+          }
+          // Dates (YYYY-MM-DD) compare correctly as strings
+          if (op === '=') return rowStr === val;
+          if (op === '>') return rowStr > val;
+          if (op === '<') return rowStr < val;
+          if (op === '>=') return rowStr >= val;
+          if (op === '<=') return rowStr <= val;
+          return false;
         })
       );
     }
@@ -352,17 +475,19 @@ export const db = {
     // sensible defaults into the local storage fallback.
     const webDB = getWebDB();
     if (!webDB.app_settings.length) {
-      webDB.app_settings = [{ id: 'default', theme: 'light', language: 'en', widgetEnabled: true, updatedAt: new Date().toISOString() }];
+      webDB.app_settings = [{ id: 'default', theme: 'light', language: 'en', widgetEnabled: true, themeTransition: '{"mode":"random"}', updatedAt: new Date().toISOString() }];
     }
     if (!webDB.notification_settings.length) {
       webDB.notification_settings = [{
         id: 'default',
         periodReminder: true,
         periodReminderDays: 1,
+        periodEndedReminder: true,
         ovulationReminder: true,
         milestoneReminder: true,
         milestoneReminderDays: 3,
         anniversaryReminder: true,
+      anniversaryReminderDays: 3,
         updatedAt: new Date().toISOString(),
       }];
     }
@@ -485,6 +610,7 @@ export const periodEntries = {
          WHERE id = ?`,
         [entry.isPeriodDay ? 1 : 0, entry.flow ?? null, JSON.stringify(entry.symptoms ?? []), entry.notes ?? null, entry.createdBy, new Date().toISOString(), existing.id]
       );
+      notifyMutation();
       return existing.id;
     } else {
       await db.query(
@@ -492,6 +618,7 @@ export const periodEntries = {
          VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
         [id, entry.date, entry.isPeriodDay ? 1 : 0, entry.flow ?? null, JSON.stringify(entry.symptoms ?? []), entry.notes ?? null, entry.createdBy, new Date().toISOString(), new Date().toISOString()]
       );
+      notifyMutation();
       return id;
     }
   },
@@ -499,7 +626,9 @@ export const periodEntries = {
   async delete(date: DateKey): Promise<void> {
     const entry = await this.get(date);
     if (entry) {
+      recordTombstone('period_entries', entry.id);
       await db.query('DELETE FROM period_entries WHERE id = ?', [entry.id]);
+      notifyMutation();
     }
   },
 };
@@ -612,6 +741,7 @@ export const milestones = {
        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       [id, milestone.title, milestone.date, milestone.emoji, milestone.note ?? null, milestone.createdBy, now, now]
     );
+    notifyMutation();
     return id;
   },
 
@@ -631,10 +761,13 @@ export const milestones = {
       `UPDATE milestones SET ${fields}, updated_at = ? WHERE id = ?`,
       [...values, new Date().toISOString(), id]
     );
+    notifyMutation();
   },
 
   async delete(id: string): Promise<void> {
+    recordTombstone('milestones', id);
     await db.query('DELETE FROM milestones WHERE id = ?', [id]);
+    notifyMutation();
   },
 };
 
@@ -656,12 +789,13 @@ export const anniversaries = {
       queries.push({ sql: 'UPDATE anniversaries SET is_primary = 0' });
     }
     queries.push({
-      sql: `INSERT INTO anniversaries (id, date, label, is_primary, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      params: [id, anniversary.date, anniversary.label, anniversary.isPrimary ? 1 : 0, new Date().toISOString()],
+      sql: `INSERT INTO anniversaries (id, date, label, is_primary, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      params: [id, anniversary.date, anniversary.label, anniversary.isPrimary ? 1 : 0, new Date().toISOString(), new Date().toISOString()],
     });
     // Multi-write: the "one primary" invariant and the insert must apply together.
     await db.transaction(queries);
+    notifyMutation();
     return id;
   },
 
@@ -679,30 +813,105 @@ export const anniversaries = {
       const values = Object.entries(updates)
         .filter(([_, v]) => v !== undefined)
         .map(([_, v]) => v);
-      queries.push({ sql: `UPDATE anniversaries SET ${fields} WHERE id = ?`, params: [...values, id] });
+      queries.push({ sql: `UPDATE anniversaries SET ${fields}, updated_at = ? WHERE id = ?`, params: [...values, new Date().toISOString(), id] });
+    } else {
+      // Bump updated_at even for a bare isPrimary flip so the change wins sync
+      queries.push({ sql: 'UPDATE anniversaries SET updated_at = ? WHERE id = ?', params: [new Date().toISOString(), id] });
     }
 
     if (queries.length) {
       await db.transaction(queries);
+      notifyMutation();
     }
   },
 
   async delete(id: string): Promise<void> {
+    recordTombstone('anniversaries', id);
     await db.query('DELETE FROM anniversaries WHERE id = ?', [id]);
+    notifyMutation();
+  },
+};
+
+// Notices (the noticeboard): a note one partner leaves for the other with a
+// time to alert them — one-time via remind_at, or repeating every repeat_minutes.
+const boolInt = (v: boolean | number | undefined): number =>
+  v === true || v === 1 ? 1 : 0;
+
+export const notices = {
+  async getAll(): Promise<Notice[]> {
+    return db.query('SELECT * FROM notices ORDER BY active DESC, remind_at ASC') as Promise<Notice[]>;
+  },
+
+  async create(notice: { message: string; remindAt: string; repeatMinutes: number; createdBy: Notice['createdBy'] }): Promise<string> {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await db.query(
+      `INSERT INTO notices (id, message, remind_at, repeat_minutes, active, created_by, synced, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, 0, ?, ?)`,
+      [id, notice.message, notice.remindAt, Math.max(0, Math.floor(notice.repeatMinutes)), notice.createdBy, now, now]
+    );
+    notifyMutation();
+    return id;
+  },
+
+  async setActive(id: string, active: boolean): Promise<void> {
+    await db.query('UPDATE notices SET active = ?, updated_at = ? WHERE id = ?', [boolInt(active), new Date().toISOString(), id]);
+    notifyMutation();
+  },
+
+  async delete(id: string): Promise<void> {
+    recordTombstone('notices', id);
+    await db.query('DELETE FROM notices WHERE id = ?', [id]);
+    notifyMutation();
   },
 };
 
 // Couple Pair
 export const couplePair = {
   async get(): Promise<CouplePair | null> {
+    // 1) Locally recorded pairing wins
     const profile = await userProfile.get();
-    if (!profile?.pairedDeviceId) return null;
+    if (profile?.pairedDeviceId) {
+      const result = await db.query(
+        'SELECT * FROM couple_pair WHERE boy_device_id = ? OR girl_device_id = ?',
+        [profile.deviceId, profile.deviceId]
+      );
+      if (result[0]) {
+        return result[0] as CouplePair;
+      }
+    }
 
-    const result = await db.query(
-      'SELECT * FROM couple_pair WHERE boy_device_id = ? OR girl_device_id = ?',
-      [profile.deviceId, profile.deviceId]
+    // 2) Otherwise ask the registry — this browser may have paired via another
+    if (!profile?.deviceId) return null;
+    const api = await apiGet<{ success: boolean; pair?: { id: string; boyDeviceId: string; girlDeviceId: string; anniversaryDate: string; createdAt?: string } }>(
+      `/pair?deviceId=${encodeURIComponent(profile.deviceId)}`
     );
-    return result[0] as CouplePair | null;
+    if (!api?.success || !api.pair) return null;
+
+    // Persist it locally so this device is paired from now on; clear the
+    // table first so this stays a single row even if it already ran before.
+    const pair = api.pair;
+    const now = new Date().toISOString();
+    const otherDeviceId = pair.boyDeviceId === profile.deviceId ? pair.girlDeviceId : pair.boyDeviceId;
+    await db.transaction([
+      { sql: 'DELETE FROM couple_pair' },
+      {
+        sql: `INSERT INTO couple_pair (id, boy_device_id, girl_device_id, anniversary_date, created_at)
+              VALUES (?, ?, ?, ?, ?)`,
+        params: [pair.id, pair.boyDeviceId, pair.girlDeviceId, pair.anniversaryDate, pair.createdAt ?? now],
+      },
+      ...(profile
+        ? [{ sql: 'UPDATE user_profile SET paired_device_id = ?, updated_at = ? WHERE id = ?', params: [otherDeviceId, now, profile.id] as unknown[] }]
+        : []),
+    ]);
+
+    return {
+      id: pair.id,
+      boyDeviceId: pair.boyDeviceId,
+      girlDeviceId: pair.girlDeviceId,
+      anniversaryDate: pair.anniversaryDate,
+      createdAt: pair.createdAt ?? now,
+    };
   },
 
   async create(boyDeviceId: string, girlDeviceId: string, anniversaryDate: string): Promise<string> {
@@ -743,19 +952,28 @@ export const pairingCodes = {
 };
 
 // Notification Settings
+// Defaults merged in when a column was seeded before it existed
+const NOTIFICATION_DEFAULTS = {
+  periodReminder: true,
+  periodReminderDays: 1,
+  periodEndedReminder: true,
+  ovulationReminder: true,
+  milestoneReminder: true,
+  milestoneReminderDays: 3,
+  anniversaryReminder: true,
+  anniversaryReminderDays: 3,
+};
+
 export const notificationSettings = {
   async get(): Promise<NotificationSettings> {
     const result = await db.query('SELECT * FROM notification_settings LIMIT 1');
-    return result[0] as NotificationSettings || {
+    const row = result[0] as Partial<NotificationSettings> | undefined;
+    return {
       id: 'default',
-      periodReminder: true,
-      periodReminderDays: 1,
-      ovulationReminder: true,
-      milestoneReminder: true,
-      milestoneReminderDays: 3,
-      anniversaryReminder: true,
-      updatedAt: new Date().toISOString(),
-    };
+      ...NOTIFICATION_DEFAULTS,
+      ...(row ?? {}),
+      updatedAt: row?.updatedAt ?? new Date().toISOString(),
+    } as NotificationSettings;
   },
 
   async update(settings: Partial<Omit<NotificationSettings, 'id' | 'updatedAt'>>): Promise<void> {
@@ -782,7 +1000,7 @@ export const notificationSettings = {
 export const appSettings = {
   async get(): Promise<AppSettings> {
     const result = await db.query('SELECT * FROM app_settings LIMIT 1');
-    return result[0] as AppSettings || { id: 'default', theme: 'light', language: 'en', widgetEnabled: true, updatedAt: new Date().toISOString() };
+    return (result[0] as AppSettings) || { id: 'default', theme: 'light', language: 'en', widgetEnabled: true, themeTransition: '{"mode":"random"}', updatedAt: new Date().toISOString() };
   },
 
   async update(settings: Partial<Omit<AppSettings, 'id' | 'updatedAt'>>): Promise<void> {
@@ -866,27 +1084,98 @@ export async function generatePairingCode(role: UserRole, name: string, deviceId
   const code = generateCode();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   await pairingCodes.create({ code, role, deviceId, name, expiresAt });
+
+  // Also publish it to the shared dev-server registry so the partner in
+  // another browser (or on another machine pointed at this dev server) can pair.
+  await apiPost('/create', { code, role, deviceId, name, expiresAt });
   return code;
 }
 
-export async function enterPairingCode(code: string, currentDeviceId: string, currentRole: UserRole): Promise<{ success: boolean; anniversaryDate?: string; pairedRole?: UserRole }> {
-  const pairingCode = await pairingCodes.get(code);
+/** Remove any shared pairing for this device from the dev-server registry,
+    so both browser tabs stay consistent after an unpair. */
+export async function unpairRemoteDevice(deviceId: string): Promise<void> {
+  try {
+    await fetch('/api/pairing/unpair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId }),
+    });
+  } catch {
+    // Best-effort; registry may be absent on native builds — that's fine
+  }
+}
+
+export async function enterPairingCode(code: string, currentDeviceId: string, currentRole: UserRole): Promise<{ success: boolean; anniversaryDate?: string; pairedRole?: UserRole; pairedDeviceId?: string; reason?: string }> {
+  const clean = code.replace(/\s/g, '').toUpperCase();
+
+  // Shared dev-server registry first: validate + consume the code atomically,
+  // then write the pairing into the local database.
+  const profile = await userProfile.get();
+  const apiResult = await apiPost<{
+    success: boolean;
+    reason?: string;
+    anniversaryDate?: string;
+    pairedRole?: 'boy' | 'girl';
+    pairedDeviceId?: string;
+    couplePair?: {
+      id: string;
+      boyDeviceId: string;
+      girlDeviceId: string;
+      anniversaryDate: string;
+      createdAt: string;
+      names?: Record<string, string | null>;
+    };
+  }>('/use', { code: clean, role: currentRole, deviceId: currentDeviceId, name: profile?.name ?? '' });
+
+  if (apiResult) {
+    if (!apiResult.success) {
+      return { success: false, reason: apiResult.reason };
+    }
+
+    await db.transaction([
+      { sql: 'DELETE FROM couple_pair' },
+      {
+        sql: `INSERT INTO couple_pair (id, boy_device_id, girl_device_id, anniversary_date, created_at)
+              VALUES (?, ?, ?, ?, ?)`,
+        params: [
+          apiResult.couplePair?.id ?? crypto.randomUUID(),
+          apiResult.couplePair?.boyDeviceId,
+          apiResult.couplePair?.girlDeviceId,
+          apiResult.anniversaryDate,
+          apiResult.couplePair?.createdAt ?? new Date().toISOString(),
+        ],
+      },
+      ...(profile
+        ? [{ sql: 'UPDATE user_profile SET paired_device_id = ?, updated_at = ? WHERE id = ?', params: [apiResult.pairedDeviceId, new Date().toISOString(), profile.id] as unknown[] }]
+        : []),
+    ]);
+
+    return {
+      success: true,
+      anniversaryDate: apiResult.anniversaryDate,
+      pairedRole: apiResult.pairedRole,
+      pairedDeviceId: apiResult.pairedDeviceId,
+    };
+  }
+
+  // Local fallback (single browser demo without the dev-server registry)
+  const pairingCode = await pairingCodes.get(clean);
   if (!pairingCode) {
-    return { success: false };
+    return { success: false, reason: 'not_found' };
   }
 
   if (pairingCode.role === currentRole) {
-    return { success: false };
+    return { success: false, reason: 'same_role' };
   }
 
   const anniversaryDate = new Date().toISOString().split('T')[0];
   const boyDeviceId = currentRole === 'boy' ? currentDeviceId : pairingCode.deviceId;
   const girlDeviceId = currentRole === 'girl' ? currentDeviceId : pairingCode.deviceId;
-  const profile = await userProfile.get();
   const now = new Date().toISOString();
 
   // Pairing touches three tables; it must succeed or fail as one unit.
   await db.transaction([
+    { sql: 'DELETE FROM couple_pair' },
     {
       sql: `INSERT INTO couple_pair (id, boy_device_id, girl_device_id, anniversary_date, created_at)
        VALUES (?, ?, ?, ?, ?)`,
@@ -894,28 +1183,59 @@ export async function enterPairingCode(code: string, currentDeviceId: string, cu
     },
     {
       sql: 'UPDATE pairing_codes SET used = 1, used_at = ?, used_by_device_id = ? WHERE code = ?',
-      params: [now, currentDeviceId, code],
+      params: [now, currentDeviceId, clean],
     },
     ...(profile
       ? [{ sql: 'UPDATE user_profile SET paired_device_id = ?, updated_at = ? WHERE id = ?', params: [pairingCode.deviceId, now, profile.id] as unknown[] }]
       : []),
   ]);
 
-  return { success: true, anniversaryDate, pairedRole: pairingCode.role };
+  return { success: true, anniversaryDate, pairedRole: pairingCode.role, pairedDeviceId: pairingCode.deviceId };
 }
 
 // Notifications (no-op in web)
+
+/** The high-importance channel our reminders live on — created on first use.
+ *  High importance + sound + vibration + Public visibility = a real heads-up on the lock screen. */
+export async function ensureReminderChannel(): Promise<void> {
+  if (!(await isTauriEnv())) return;
+  try {
+    const { createChannel, channels, Importance, Visibility } = await import('@tauri-apps/plugin-notification');
+    const existing = await channels().catch(() => [] as { id: string }[]);
+    if (existing?.some(c => c.id === 'reminders')) return;
+    await createChannel({
+      id: 'reminders',
+      name: 'MeMo 💕 Reminders',
+      description: 'Period, ovulation, fertility, milestone and anniversary reminders',
+      importance: Importance.High,
+      visibility: Visibility.Public,
+      vibration: true,
+      lights: true,
+    });
+  } catch (error) {
+    console.warn('Could not create the reminders channel:', error);
+  }
+}
+
+/** Schedule a reminder to fire at an absolute time — Android fires it via AlarmManager even while locked and the app is closed */
+export async function scheduleReminderAt(title: string, body: string, unix: number, channelId = 'reminders'): Promise<void> {
+  const tauriAvailable = await isTauriEnv();
+  if (tauriAvailable) {
+    return invoke('schedule_burmese_reminder', { title, body, unix, channelId });
+  }
+}
+
 export async function schedulePeriodReminder(daysBefore: number, periodStart: string): Promise<void> {
   const tauriAvailable = await isTauriEnv();
   if (tauriAvailable) {
-    return invoke('schedule_period_reminder', { days_before: daysBefore, period_start: periodStart });
+    return invoke('schedule_period_reminder', { daysBefore, periodStart });
   }
 }
 
 export async function scheduleMilestoneReminder(daysBefore: number, milestoneDate: string, title: string): Promise<void> {
   const tauriAvailable = await isTauriEnv();
   if (tauriAvailable) {
-    return invoke('schedule_milestone_reminder', { days_before: daysBefore, milestone_date: milestoneDate, title });
+    return invoke('schedule_milestone_reminder', { daysBefore, milestoneDate, title });
   }
 }
 
@@ -963,9 +1283,10 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   period_entries: ['id', 'date', 'is_period_day', 'flow', 'symptoms', 'notes', 'created_by', 'synced', 'created_at', 'updated_at'],
   cycle_settings: ['id', 'cycle_length', 'period_length', 'last_period_start', 'updated_at'],
   milestones: ['id', 'title', 'date', 'emoji', 'note', 'created_by', 'synced', 'created_at', 'updated_at'],
-  anniversaries: ['id', 'date', 'label', 'is_primary', 'created_at'],
-  notification_settings: ['id', 'period_reminder', 'period_reminder_days', 'ovulation_reminder', 'milestone_reminder', 'milestone_reminder_days', 'anniversary_reminder', 'updated_at'],
-  app_settings: ['id', 'theme', 'language', 'widget_enabled', 'updated_at'],
+  notification_settings: ['id', 'period_reminder', 'period_reminder_days', 'period_ended_reminder', 'ovulation_reminder', 'milestone_reminder', 'milestone_reminder_days', 'anniversary_reminder', 'anniversary_reminder_days', 'updated_at'],
+  anniversaries: ['id', 'date', 'label', 'is_primary', 'created_at', 'updated_at'],
+  notices: ['id', 'message', 'remind_at', 'repeat_minutes', 'active', 'created_by', 'synced', 'created_at', 'updated_at'],
+  app_settings: ['id', 'theme', 'language', 'widget_enabled', 'theme_transition', 'updated_at'],
   sync_queue: ['id', 'type', 'action', 'payload', 'retries', 'created_at', 'last_attempt_at'],
   pairing_codes: ['id', 'code', 'role', 'device_id', 'name', 'expires_at', 'used', 'used_at', 'used_by_device_id'],
 };
@@ -1003,6 +1324,13 @@ export async function exportData(): Promise<string> {
           if (camel in row) out[col] = row[camel];
         }
       }
+      // Backfill a column that was created after the row was
+      if (table === 'notification_settings' && out.anniversary_reminder_days === undefined) {
+        out.anniversary_reminder_days = NOTIFICATION_DEFAULTS.anniversaryReminderDays;
+      }
+      if (table === 'anniversaries' && out.updated_at === undefined) {
+        out.updated_at = out.created_at ?? null;
+      }
       return out;
     });
   }
@@ -1011,6 +1339,21 @@ export async function exportData(): Promise<string> {
 
 export async function importData(jsonData: string): Promise<void> {
   const parsed = JSON.parse(jsonData) as Record<string, unknown>;
+
+  // Sanity-check that this really is a MeMo backup before touching anything
+  const looksLikeBackup = [
+    'user_profile',
+    'cycle_settings',
+    'app_settings',
+    'milestones',
+    'anniversaries',
+    'period_entries',
+    'notification_settings',
+  ].some(table => Array.isArray(parsed[table]));
+  if (!looksLikeBackup) {
+    throw new Error('That file is not a MeMo backup. Choose the JSON file exported from MeMo and try again.');
+  }
+
   const queries: TransactionQuery[] = [];
 
   for (const [table, columns] of Object.entries(TABLE_COLUMNS)) {
@@ -1031,6 +1374,21 @@ export async function importData(jsonData: string): Promise<void> {
   }
 
   // All-or-nothing restore: a failed row must not leave the database half-wiped.
-  await db.transaction(queries);
+  const tauriAvailable = await isTauriEnv();
+  if (tauriAvailable) {
+    await db.transaction(queries);
+  } else {
+    const snapshotKey = 'hourglass_web_db';
+    const snapshot = localStorage.getItem(snapshotKey);
+    try {
+      await db.transaction(queries);
+    } catch (error) {
+      // Web fallback applies statements in order with no rollback — restore the snapshot by hand
+      if (snapshot !== null) {
+        localStorage.setItem(snapshotKey, snapshot);
+      }
+      throw error;
+    }
+  }
   window.location.reload();
 }

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, Sparkles, Award, Search, Filter, X } from 'lucide-react';
@@ -10,6 +10,7 @@ import { DatePickerField } from '@/components/ui/CalendarPicker';
 import { SwipeableMilestoneCard } from '@/components/ui/CustomModals';
 import { AnniversaryCard, MilestoneModal, AnniversaryModal } from '@/components/milestone/MilestoneComponents';
 import { useUserStore } from '@/stores';
+import { useDeletionStore } from '@/stores';
 import { useMilestoneStore, MilestoneFilters, MilestoneDateType, MilestoneTiming } from '@/stores/milestoneStore';
 import { useAnniversaryStore } from '@/stores';
 import { Milestone, Anniversary, UserRole } from '@/types';
@@ -57,6 +58,8 @@ export const MilestoneScreen: React.FC = () => {
   } = useMilestoneStore();
   const { items: anniversaries, primary, loadAll: loadAnniversaries, add: addAnniversary, update: updateAnniversary, remove: removeAnniversary } = useAnniversaryStore();
   const { showConfirm } = useCustomModals();
+  const { ghostMilestones, dismissGhostMilestone } = useDeletionStore();
+  const { ghostAnniversaries, dismissGhostAnniversary } = useDeletionStore();
 
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const [showAnniversaryModal, setShowAnniversaryModal] = useState(false);
@@ -74,6 +77,62 @@ export const MilestoneScreen: React.FC = () => {
     loadAll();
     loadAnniversaries();
   }, [loadAll, loadAnniversaries]);
+
+  // Rows the partner deletes are already gone from the DB; keep them on
+  // screen as ghosts so they dissolve with the same exit animation a local
+  // delete gets, then drop them.
+  useEffect(() => {
+    if (ghostMilestones.length === 0) return;
+    const ids = ghostMilestones.map(m => m.id);
+    setDeletingIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      ids.forEach(dismissGhostMilestone);
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        ids.forEach(id => next.delete(id));
+        return next;
+      });
+    }, 1250);
+    return () => window.clearTimeout(timer);
+  }, [ghostMilestones, dismissGhostMilestone]);
+
+  useEffect(() => {
+    if (ghostAnniversaries.length === 0) return;
+    const ids = ghostAnniversaries.map(a => a.id);
+    setDeletingAnnIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      ids.forEach(dismissGhostAnniversary);
+      setDeletingAnnIds(prev => {
+        const next = new Set(prev);
+        ids.forEach(id => next.delete(id));
+        return next;
+      });
+    }, 1250);
+    return () => window.clearTimeout(timer);
+  }, [ghostAnniversaries, dismissGhostAnniversary]);
+
+  // Ghosts take over rendering for anything the partner just removed
+  const visibleMilestones = useMemo(() => {
+    if (ghostMilestones.length === 0) return milestones;
+    const ghostIds = new Set(ghostMilestones.map(g => g.id));
+    return [...milestones.filter(m => !ghostIds.has(m.id)), ...ghostMilestones];
+  }, [milestones, ghostMilestones]);
+
+  const visibleAnniversaries = useMemo(() => {
+    if (ghostAnniversaries.length === 0) return anniversaries;
+    const ghostIds = new Set(ghostAnniversaries.map(g => g.id));
+    return [...anniversaries.filter(a => !ghostIds.has(a.id)), ...ghostAnniversaries];
+  }, [anniversaries, ghostAnniversaries]);
+
+  const visiblePrimary = primary ?? ghostAnniversaries.find(a => a.isPrimary) ?? null;
 
   // Share deep link: ?share=<id> opens the edit modal for that milestone
   useEffect(() => {
@@ -192,23 +251,26 @@ export const MilestoneScreen: React.FC = () => {
     </GlassCard>
   ));
 
-  const filterModal = showFilterModal && (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4"
-      onClick={() => setShowFilterModal(false)}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 60, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 40, scale: 0.96 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        className="w-full max-w-md"
-        onClick={e => e.stopPropagation()}
-      >
-        <GlassView className="modal-surface rounded-3xl overflow-hidden">
+  const filterModal = (
+    <AnimatePresence>
+      {showFilterModal && (
+        <motion.div
+          key="filter-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4"
+          onClick={() => setShowFilterModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 90, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 60, scale: 0.94 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
+            className="w-full max-w-md"
+            onClick={e => e.stopPropagation()}
+          >
+            <GlassView className="modal-surface rounded-3xl overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-5 pt-4 pb-2 border-b border-border">
             <h2 className="text-h3 font-bold text-text flex items-center gap-2">
@@ -340,28 +402,36 @@ export const MilestoneScreen: React.FC = () => {
             </button>
           </div>
         </GlassView>
-      </motion.div>
-    </motion.div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 
   return (
     <div className="min-h-screen bg-bg pb-32 safe-bottom">
       {/* Status Bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-xl" />
+      <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-sm" />
 
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-xl border-b border-border/60"
+        transition={{ duration: 0.28 }}
+        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-sm border-b border-border/60"
       >
         <div className="app-header-inner flex items-center justify-between">
-          <Link to="/" className="p-2 rounded-xl hover:bg-surface-subtle transition-colors">
+          <Link to="/" className="p-2 rounded-xl hover:bg-surface-subtle transition-colors" aria-label="Back to home">
             <ChevronLeft className="w-5 h-5 text-text-secondary" />
           </Link>
           <h1 className="text-h3 font-bold text-text">Milestones</h1>
-          <div className="w-12" />
+          <button
+            onClick={openFilterModal}
+            aria-label="Open filters"
+            className="p-2 rounded-xl hover:bg-surface-subtle transition-colors text-text-secondary"
+          >
+            <Filter className="w-5 h-5" />
+          </button>
         </div>
       </motion.div>
 
@@ -481,24 +551,24 @@ export const MilestoneScreen: React.FC = () => {
         </motion.div>
 
         {/* Primary Anniversary */}
-        {primary && (
+        {visiblePrimary && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.2 }}
           >
             <AnniversaryCard
-              anniversary={primary}
+              anniversary={visiblePrimary}
               currentUserRole={profile?.role || 'girl'}
               onEdit={a => { setEditingAnniversary(a); setShowAnniversaryModal(true); }}
               onDelete={handleDeleteAnniversary}
-              destroying={deletingAnnIds.has(primary.id)}
+              destroying={deletingAnnIds.has(visiblePrimary.id)}
             />
           </motion.div>
         )}
 
         {/* Other Anniversaries */}
-        {anniversaries.filter(a => a.id !== primary?.id).length > 0 && (
+        {visibleAnniversaries.filter(a => a.id !== visiblePrimary?.id).length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -506,8 +576,8 @@ export const MilestoneScreen: React.FC = () => {
           >
             <h3 className="font-semibold text-text mb-3">Anniversaries</h3>
             <div className="space-y-4">
-              {anniversaries
-                .filter(a => a.id !== primary?.id)
+              {visibleAnniversaries
+                .filter(a => a.id !== visiblePrimary?.id)
                 .map((anniversary, index) => (
                   <AnniversaryCard
                     key={anniversary.id}
@@ -535,9 +605,9 @@ export const MilestoneScreen: React.FC = () => {
             <span className="text-caption text-text-muted">Newest first</span>
           </div>
 
-          {loading && milestones.length === 0 ? (
+          {loading && visibleMilestones.length === 0 ? (
             <div className="space-y-3">{milestoneSkeletons}</div>
-          ) : milestones.length === 0 ? (
+          ) : visibleMilestones.length === 0 ? (
             <MotionGlassCard className="p-8 text-center">
               <Sparkles className="w-12 h-12 text-text-muted mx-auto mb-4" />
               <p className="text-text-secondary font-medium">
@@ -558,7 +628,7 @@ export const MilestoneScreen: React.FC = () => {
           ) : (
             <>
               <div className="space-y-3">
-                {milestones.map((milestone, index) => (
+                {visibleMilestones.map((milestone, index) => (
                   <ScrollShrink key={milestone.id} index={index}>
                     <SwipeableMilestoneCard
                       milestone={milestone}
@@ -567,6 +637,7 @@ export const MilestoneScreen: React.FC = () => {
                       onDelete={handleDeleteMilestone}
                       onShare={m => navigate(`/milestones?share=${m.id}`)}
                       destroying={deletingIds.has(milestone.id)}
+                      index={index}
                     />
                   </ScrollShrink>
                 ))}
@@ -591,7 +662,7 @@ export const MilestoneScreen: React.FC = () => {
                   )}
                 </div>
               )}
-              {!hasMore && itemsEndCaption(milestones.length)}
+              {!hasMore && itemsEndCaption(visibleMilestones.length)}
             </>
           )}
         </motion.div>

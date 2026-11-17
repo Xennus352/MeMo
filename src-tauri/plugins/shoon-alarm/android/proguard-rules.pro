@@ -1,0 +1,2 @@
+-keep class app.tauri.shoonalarm.** { *; }
+-keepclassmembers class app.tauri.shoonalarm.** { *; }

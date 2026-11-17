@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { X, Droplet, Heart, Sparkles, Trash2 } from 'lucide-react';
 import { cn, formatDateKeyFull, dateKey } from '@/utils/helpers';
 import { GlassView, Button, GlassCard } from '@/components/ui/GlassComponents';
@@ -58,6 +58,9 @@ export const PeriodLogModal: React.FC<PeriodLogModalProps> = ({
     };
   }, [isOpen]);
 
+  // Reset only when the modal is opened or the date changes — not when the
+  // entries store hands us a fresh object for the same entry, which would
+  // wipe what the user is typing mid-edit.
   useEffect(() => {
     if (existingEntry) {
       setIsPeriodDay(existingEntry.isPeriodDay);
@@ -70,7 +73,8 @@ export const PeriodLogModal: React.FC<PeriodLogModalProps> = ({
       setSelectedSymptoms([]);
       setNotes('');
     }
-  }, [existingEntry, selectedDate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, isOpen]);
 
   const handleSave = () => {
     const entry = {
@@ -106,18 +110,19 @@ export const PeriodLogModal: React.FC<PeriodLogModalProps> = ({
 
   const modalContent = (
     <motion.div
-      initial={false}
+      key="period-log-modal"
+      initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
+      transition={{ duration: 0.25 }}
       className="fixed inset-0 z-[200] flex items-end justify-center bg-black/45 backdrop-blur-sm p-0 sm:p-4"
       onClick={onClose}
     >
       <motion.div
-        initial={{ opacity: 0, y: 100 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 100 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        initial={{ opacity: 0, y: 110, scale: 0.92 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 80, scale: 0.94 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
         className="w-full max-w-md max-h-[92dvh]"
         onClick={e => e.stopPropagation()}
       >
@@ -131,6 +136,7 @@ export const PeriodLogModal: React.FC<PeriodLogModalProps> = ({
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
               className="p-1 rounded-lg hover:bg-surface-subtle transition-colors"
+              aria-label="Close"
             >
               <X className="w-5 h-5 text-text-muted" />
             </motion.button>
@@ -264,7 +270,8 @@ export const PeriodLogModal: React.FC<PeriodLogModalProps> = ({
     </motion.div>
   );
 
-  if (!isOpen) return null;
-
-  return createPortal(modalContent, document.body);
+  return createPortal(
+    <AnimatePresence>{isOpen && modalContent}</AnimatePresence>,
+    document.body
+  );
 };

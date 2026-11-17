@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { X, Check, AlertCircle, Info, AlertTriangle, Trash2, Edit2, CheckCircle, XCircle, Calendar } from 'lucide-react';
 import { GlassView, Button, GlassCard } from './GlassComponents';
 import { ParticleBurst } from './ParticleBurst';
 import { cn } from '@/utils/helpers';
+import { useUserStore, usePresenceStore } from '@/stores';
+import { useMilestoneFlash, isJustCreated, milestoneSheetStyle } from '@/components/milestone/milestoneEffects';
 import { createPortal } from 'react-dom';
 
 /* ===== Custom Confirm Context ===== */
@@ -66,18 +68,19 @@ const CustomConfirmModal: React.FC<CustomConfirmModalProps> = ({
 
   const modalContent = (
     <motion.div
-      initial={false}
+      key="confirm-dialog"
+      initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
+      transition={{ duration: 0.22 }}
       className="fixed inset-0 z-[500] flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        initial={{ opacity: 0, scale: 0.86, y: 32 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: -20 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        exit={{ opacity: 0, scale: 0.9, y: -16 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 24, mass: 0.9 }}
         className="w-full max-w-md my-auto"
         onClick={e => e.stopPropagation()}
       >
@@ -136,9 +139,7 @@ const CustomConfirmModal: React.FC<CustomConfirmModalProps> = ({
     </motion.div>
   );
 
-  if (!isOpen) return null;
-
-  return createPortal(modalContent, document.body);
+  return createPortal(<AnimatePresence>{isOpen && modalContent}</AnimatePresence>, document.body);
 };
 
 /* ===== Toast Notifications ===== */
@@ -217,9 +218,11 @@ const ToastContainer: React.FC = () => {
   const { toasts, dismissToast } = useToast();
   return (
     <div className="fixed bottom-28 left-4 right-4 z-[600] flex flex-col gap-2 pointer-events-none">
-      {toasts.map(toast => (
-        <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />
-      ))}
+      <AnimatePresence initial={false}>
+        {toasts.map(toast => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />
+        ))}
+      </AnimatePresence>
     </div>
   );
 };
@@ -488,6 +491,8 @@ interface SwipeableMilestoneCardProps {
   currentUserRole: 'boy' | 'girl';
   className?: string;
   destroying?: boolean;
+  /** Position in the list — staggers the entrance */
+  index?: number;
 }
 
 export const SwipeableMilestoneCard: React.FC<SwipeableMilestoneCardProps> = ({
@@ -498,51 +503,115 @@ export const SwipeableMilestoneCard: React.FC<SwipeableMilestoneCardProps> = ({
   currentUserRole,
   className,
   destroying = false,
+  index = 0,
 }) => {
   const isOwner = milestone.createdBy === currentUserRole;
+  const myName = useUserStore(state => state.profile?.name);
+  const partnerName = usePresenceStore(state => state.partnerName);
+  const creatorName = milestone.createdBy === currentUserRole
+    ? (myName ?? 'You')
+    : (partnerName ?? 'Partner');
+
+  // Entrance (created here or synced from the partner's device) plus an edit
+  // flash whenever this row's updatedAt changes — the same signal the sync
+  // merge bumps on the partner's device.
+  const editFlash = useMilestoneFlash(milestone.updatedAt);
+  const [born] = useState(() => isJustCreated(milestone.createdAt));
 
   return (
-    <SwipeableCard
-      destroying={destroying}
-      actions={
-        <>
-          <SwipeAction variant="primary" onClick={() => { onEdit(milestone); }} icon={<Edit2 className="w-5 h-5" />} label="Edit" />
-          {isOwner && (
-            <SwipeAction variant="danger" onClick={() => onDelete(milestone.id)} icon={<Trash2 className="w-5 h-5" />} label="Delete" />
-          )}
-        </>
-      }
-      className={className}
-      actionWidth={116}
+    <motion.div
+      initial={{ opacity: 0, y: 46, scale: 0.78 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{
+        type: 'spring',
+        stiffness: 240,
+        damping: 17,
+        mass: 1,
+        delay: Math.min(index * 0.06, 0.3),
+      }}
+      className="relative"
     >
-      <GlassCard className="p-4" style={{ background: 'var(--color-surface)' }}>
-        <div className="flex items-start gap-4">
+      {/* Born flourish: pink glow that blooms once for a freshly created card */}
+      {born && (
+        <motion.div
+          key="born"
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-10"
+          initial={{ opacity: 0.9 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 1.5, ease: 'easeOut' }}
+          style={{ background: 'radial-gradient(120% 130% at 50% 0%, rgba(235,154,192,0.55) 0%, rgba(186,128,240,0.3) 45%, transparent 75%)' }}
+        />
+      )}
+      {/* Edit flash: a light sweep plus an accent ring pulse, re-keyed per edit so it replays */}
+      {editFlash > 0 && (
+        <motion.div
+          key={`sheen-${editFlash}`}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-[inherit]"
+        >
           <motion.div
-            animate={{ scale: [1, 1.18, 1], rotate: [0, -6, 6, 0] }}
-            transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-            className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 bg-accent-light"
-          >
-            <span>{milestone.emoji}</span>
-          </motion.div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-text truncate">{milestone.title}</h3>
-            <p className="text-body-sm text-text-muted mt-0.5">{new Date(milestone.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-            {typeof milestone.note === 'string' && milestone.note.trim() && (
-              <p className="text-body-sm text-text-secondary mt-2 line-clamp-2">{milestone.note}</p>
+            className="absolute inset-y-0 w-1/2 -skew-x-12"
+            style={milestoneSheetStyle}
+            initial={{ x: '-130%' }}
+            animate={{ x: '340%' }}
+            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+          />
+        </motion.div>
+      )}
+      {editFlash > 0 && (
+        <motion.div
+          key={`ring-${editFlash}`}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-10 rounded-[inherit] border-2 border-accent"
+          initial={{ opacity: 0, scale: 1 }}
+          animate={{ opacity: [0, 0.9, 0], scale: [1, 1.02, 1] }}
+          transition={{ duration: 1.1, times: [0, 0.25, 1], ease: 'easeOut' }}
+          style={{ boxShadow: '0 0 24px rgba(235,154,192,0.45)' }}
+        />
+      )}
+
+      <SwipeableCard
+        destroying={destroying}
+        actions={
+          <>
+            <SwipeAction variant="primary" onClick={() => { onEdit(milestone); }} icon={<Edit2 className="w-5 h-5" />} label="Edit" />
+            {isOwner && (
+              <SwipeAction variant="danger" onClick={() => onDelete(milestone.id)} icon={<Trash2 className="w-5 h-5" />} label="Delete" />
             )}
-            <div className="flex items-center gap-4 mt-3 text-caption text-text-muted">
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-light text-accent">
-                <Calendar className="w-3 h-3" />
-                {new Date(milestone.date).toLocaleDateString()}
-              </span>
-              <span className="flex items-center gap-1">
-                <span>{milestone.createdBy === 'girl' ? '👧' : '👦'}</span>
-                {milestone.createdBy === 'girl' ? 'Her' : 'His'}
-              </span>
+          </>
+        }
+        className={className}
+        actionWidth={116}
+      >
+        <GlassCard className="p-4" style={{ background: 'var(--color-surface)' }}>
+          <div className="flex items-start gap-4">
+            <motion.div
+              animate={{ scale: [1, 1.18, 1], rotate: [0, -6, 6, 0] }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+              className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 bg-accent-light"
+            >
+              <span>{milestone.emoji}</span>
+            </motion.div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-text truncate">{milestone.title}</h3>
+              <p className="text-body-sm text-text-muted mt-0.5">{new Date(milestone.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              {typeof milestone.note === 'string' && milestone.note.trim() && (
+                <p className="text-body-sm text-text-secondary mt-2 line-clamp-2">{milestone.note}</p>
+              )}
+              <div className="flex items-center gap-4 mt-3 text-caption text-text-muted">
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-light text-accent">
+                  <Calendar className="w-3 h-3" />
+                  {new Date(milestone.date).toLocaleDateString()}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-input text-text-secondary normal-case font-medium">
+                  {creatorName}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-      </GlassCard>
-    </SwipeableCard>
+        </GlassCard>
+      </SwipeableCard>
+    </motion.div>
   );
 };

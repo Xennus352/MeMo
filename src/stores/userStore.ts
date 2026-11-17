@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { UserProfile, UserRole, CycleSettings, NotificationSettings, AppSettings } from '@/types';
 import { userProfile, cycleSettings, notificationSettings, appSettings, getOrCreateDeviceId } from '@/lib/tauri';
-import { applyTheme, resolveTheme } from '@/lib/theme';
+import { usePeriodStore } from './periodStore';
+import { applyTheme, applyThemeAnimated, resolveTheme, setThemeTransitionConfig } from '@/lib/theme';
 
 interface UserState {
   profile: UserProfile | null;
@@ -22,7 +23,7 @@ interface UserState {
   updateCycleSettings: (settings: Partial<Omit<CycleSettings, 'id' | 'updatedAt'>>) => Promise<void>;
   setLastPeriodStart: (date: string) => Promise<void>;
   updateNotificationSettings: (settings: Partial<Omit<NotificationSettings, 'id' | 'updatedAt'>>) => Promise<void>;
-  updateAppSettings: (settings: Partial<Omit<AppSettings, 'id' | 'updatedAt'>>) => Promise<void>;
+  updateAppSettings: (settings: Partial<Omit<AppSettings, 'id' | 'updatedAt'>>, opts?: { originX?: number; originY?: number }) => Promise<void>;
   reset: () => void;
 }
 
@@ -35,13 +36,15 @@ export const useUserStore = create<UserState>()(
         id: 'default',
         periodReminder: true,
         periodReminderDays: 1,
+        periodEndedReminder: true,
         ovulationReminder: true,
         milestoneReminder: true,
         milestoneReminderDays: 3,
         anniversaryReminder: true,
+        anniversaryReminderDays: 3,
         updatedAt: new Date().toISOString(),
       },
-      appSettings: { id: 'default', theme: 'light', language: 'en', widgetEnabled: true, updatedAt: new Date().toISOString() },
+      appSettings: { id: 'default', theme: 'light', language: 'en', widgetEnabled: true, themeTransition: '{"mode":"random"}', updatedAt: new Date().toISOString() },
       deviceId: '',
       loading: false,
       initialized: false,
@@ -58,11 +61,24 @@ export const useUserStore = create<UserState>()(
             appSettings.get(),
           ]);
 
+          // Keep the stored profile's deviceId identical to the canonical
+          // hourglass_device_id, so pairing lookups never disagree.
+          let alignedProfile = profile;
+          if (profile && profile.deviceId !== deviceId) {
+            try {
+              await userProfile.update({ deviceId });
+              alignedProfile = { ...profile, deviceId, updatedAt: new Date().toISOString() };
+            } catch (error) {
+              console.error('Failed to align device id:', error);
+            }
+          }
+
           // Apply theme on init (stored "system" falls back to light)
           applyTheme(resolveTheme(app.theme));
+          setThemeTransitionConfig(app.themeTransition);
 
           set({
-            profile,
+            profile: alignedProfile,
             cycleSettings: cycle,
             notificationSettings: notifications,
             appSettings: app,
@@ -121,11 +137,14 @@ export const useUserStore = create<UserState>()(
       updateCycleSettings: async (settings) => {
         await cycleSettings.update(settings);
         set({ cycleSettings: { ...get().cycleSettings, ...settings, updatedAt: new Date().toISOString() } });
+        // Keep predictions (cycle day, days until period, calendar phases) in sync
+        usePeriodStore.getState().refreshPredictions();
       },
 
       setLastPeriodStart: async (date: string) => {
         await cycleSettings.update({ lastPeriodStart: date });
         set({ cycleSettings: { ...get().cycleSettings, lastPeriodStart: date, updatedAt: new Date().toISOString() } });
+        usePeriodStore.getState().refreshPredictions();
       },
 
       updateNotificationSettings: async (settings) => {
@@ -133,14 +152,17 @@ export const useUserStore = create<UserState>()(
         set({ notificationSettings: { ...get().notificationSettings, ...settings, updatedAt: new Date().toISOString() } });
       },
 
-      updateAppSettings: async (settings) => {
+      updateAppSettings: async (settings, opts) => {
         await appSettings.update(settings);
         const newSettings = { ...get().appSettings, ...settings, updatedAt: new Date().toISOString() };
         set({ appSettings: newSettings });
-        
-        // Apply theme to document immediately
+
+        // Keep the transition engine's config snapshot fresh
+        setThemeTransitionConfig(newSettings.themeTransition);
+
+        // Apply theme to document immediately — animated when triggered by the user
         if (settings.theme) {
-          applyTheme(resolveTheme(settings.theme));
+          applyThemeAnimated(resolveTheme(settings.theme), opts);
         }
       },
 
@@ -152,13 +174,15 @@ export const useUserStore = create<UserState>()(
             id: 'default',
             periodReminder: true,
             periodReminderDays: 1,
+            periodEndedReminder: true,
             ovulationReminder: true,
             milestoneReminder: true,
             milestoneReminderDays: 3,
             anniversaryReminder: true,
+        anniversaryReminderDays: 3,
             updatedAt: new Date().toISOString(),
           },
-          appSettings: { id: 'default', theme: 'light', language: 'en', widgetEnabled: true, updatedAt: new Date().toISOString() },
+          appSettings: { id: 'default', theme: 'light', language: 'en', widgetEnabled: true, themeTransition: '{"mode":"random"}', updatedAt: new Date().toISOString() },
           deviceId: '',
           initialized: false,
         });

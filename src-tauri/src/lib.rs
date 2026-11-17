@@ -7,6 +7,7 @@ use tauri::{Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_sql::{DbInstances, DbPool, Migration, MigrationKind};
 use tauri_plugin_store::StoreExt;
+use sqlx::Acquire;
 
 const DB_URL: &str = "sqlite:hourglass.db";
 
@@ -78,7 +79,9 @@ async fn schedule_period_reminder(
 ) -> Result<(), String> {
   let date = chrono::NaiveDate::parse_from_str(&period_start, "%Y-%m-%d")
     .map_err(|e| e.to_string())?;
-  let at = date - chrono::Duration::days(days_before) + chrono::Duration::hours(9);
+  let at = (date - chrono::Duration::days(days_before))
+    .and_hms_opt(9, 0, 0)
+    .ok_or_else(|| "invalid reminder time".to_string())?;
 
   let unix = at.and_utc().timestamp();
   if unix <= chrono::Utc::now().timestamp() {
@@ -88,8 +91,8 @@ async fn schedule_period_reminder(
   schedule_at(
     &app,
     unix,
-    "Period Reminder",
-    format!("Your period is expected to start in {} day(s)", days_before),
+    "ရာသီလာချိန် အသိပေးချက်",
+    format!("သင့်ရာသီ နောက်ထပ် {} ရက်အတွင်း စတင်လာတော့မယ် 💕 — ပူနွေးသောရေ၊ အနားယူခြင်းကို ဦးစားပေးပါ", days_before),
   );
 
   Ok(())
@@ -104,7 +107,9 @@ async fn schedule_milestone_reminder(
 ) -> Result<(), String> {
   let date = chrono::NaiveDate::parse_from_str(&milestone_date, "%Y-%m-%d")
     .map_err(|e| e.to_string())?;
-  let at = date - chrono::Duration::days(days_before) + chrono::Duration::hours(9);
+  let at = (date - chrono::Duration::days(days_before))
+    .and_hms_opt(9, 0, 0)
+    .ok_or_else(|| "invalid reminder time".to_string())?;
 
   let unix = at.and_utc().timestamp();
   if unix <= chrono::Utc::now().timestamp() {
@@ -114,9 +119,51 @@ async fn schedule_milestone_reminder(
   schedule_at(
     &app,
     unix,
-    "Upcoming Milestone",
-    format!("{} is in {} day(s)", title, days_before),
+    "အထိမ်းအမှတ် ရက် 💕",
+    format!("{} နောက်ထပ် {} ရက်အတွင်း 💕 သင်တို့နှစ်ဦး အမြဲချစ်ပါစေ", title, days_before),
   );
+
+  Ok(())
+}
+
+#[tauri::command]
+async fn schedule_burmese_reminder(
+  app: tauri::AppHandle,
+  title: String,
+  body: String,
+  unix: i64,
+  channel_id: String,
+) -> Result<(), String> {
+  #[cfg(mobile)]
+  {
+    use tauri_plugin_notification::Schedule;
+    if let Ok(at) = time::OffsetDateTime::from_unix_timestamp(unix) {
+      app.notification()
+        .builder()
+        .title(title.clone())
+        .body(body.clone())
+        .channel_id(channel_id)
+        .schedule(Schedule::At {
+          date: at,
+          repeating: false,
+          allow_while_idle: true,
+        })
+        .show()
+        .map_err(|e| e.to_string())?;
+    }
+  }
+
+  #[cfg(desktop)]
+  {
+    // Desktop has no persistent OS scheduler; fire while the app runs
+    let app = app.clone();
+    let title = title.clone();
+    std::thread::spawn(move || {
+      let wait = (unix - chrono::Utc::now().timestamp()).max(0) as u64;
+      std::thread::sleep(std::time::Duration::from_secs(wait));
+      let _ = app.notification().builder().title(title).body(body).show();
+    });
+  }
 
   Ok(())
 }
@@ -125,7 +172,17 @@ async fn schedule_milestone_reminder(
 async fn cancel_notifications(app: tauri::AppHandle) -> Result<(), String> {
   #[cfg(mobile)]
   {
-    app.notification().cancel_all().map_err(|e| e.to_string())?;
+    // The plugin's `cancel_all()` sends a unit payload to the Kotlin `cancel`
+    // command, which then dereferences a null CancelArgs and crashes natively
+    // ("on a null object reference"). Cancel by explicit ids instead.
+    let ids: Vec<i32> = app
+      .notification()
+      .pending()
+      .map(|p| p.iter().map(|n| n.id()).collect())
+      .unwrap_or_default();
+    if !ids.is_empty() {
+      app.notification().cancel(ids).map_err(|e| e.to_string())?;
+    }
   }
 
   #[cfg(desktop)]
@@ -199,6 +256,36 @@ pub fn run() {
               sql: include_str!("../migrations/002_add_indexes.sql"),
               kind: MigrationKind::Up,
             },
+            Migration {
+              version: 3,
+              description: "add_anniversary_updated_at",
+              sql: include_str!("../migrations/003_add_anniversary_updated_at.sql"),
+              kind: MigrationKind::Up,
+            },
+            Migration {
+              version: 4,
+              description: "add_anniversary_reminder_days",
+              sql: include_str!("../migrations/004_add_anniversary_reminder_days.sql"),
+              kind: MigrationKind::Up,
+            },
+            Migration {
+              version: 5,
+              description: "add_period_ended_reminder",
+              sql: include_str!("../migrations/005_add_period_ended_reminder.sql"),
+              kind: MigrationKind::Up,
+            },
+            Migration {
+              version: 6,
+              description: "add_theme_transition",
+              sql: include_str!("../migrations/006_add_theme_transition.sql"),
+              kind: MigrationKind::Up,
+            },
+            Migration {
+              version: 7,
+              description: "add_notices",
+              sql: include_str!("../migrations/007_add_notices.sql"),
+              kind: MigrationKind::Up,
+            },
           ],
         )
         .build(),
@@ -206,8 +293,17 @@ pub fn run() {
     .plugin(tauri_plugin_notification::init())
     .plugin(tauri_plugin_store::Builder::default().build())
     .plugin(tauri_plugin_clipboard_manager::init())
+    .plugin(tauri_plugin_updater::Builder::new().build())
+    .plugin(tauri_plugin_process::init())
+    .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_os::init())
+    .plugin(tauri_plugin_android_installer::init())
+    .plugin(tauri_plugin_shoon_alarm::init())
     .invoke_handler(tauri::generate_handler![
       get_or_create_device_id,
+      schedule_burmese_reminder,
       schedule_period_reminder,
       schedule_milestone_reminder,
       cancel_notifications,

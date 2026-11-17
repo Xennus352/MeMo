@@ -16,19 +16,19 @@ interface PageTransitionProps {
 const variants = {
   initial: (direction: number) => ({
     opacity: 0,
-    x: 72 * direction,
+    x: 44 * direction,
     zIndex: 2,
   }),
   animate: {
     opacity: 1,
     x: 0,
-    transition: { duration: 0.34, ease: [0.16, 1, 0.3, 1] as const },
+    transition: { duration: 0.26, ease: [0.16, 1, 0.3, 1] as const },
   },
   exit: (direction: number) => ({
     opacity: 0,
-    x: -48 * direction,
+    x: -28 * direction,
     zIndex: 1,
-    transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as const },
+    transition: { duration: 0.2, ease: [0.16, 1, 0.3, 1] as const },
   }),
 };
 

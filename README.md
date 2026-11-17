@@ -38,7 +38,7 @@ A beautiful, private couple space app built with Tauri v2, React, and TypeScript
 
 ```bash
 # Clone and install dependencies
-cd hourglass
+cd MeMo
 npm install
 
 # Install Rust dependencies
@@ -74,7 +74,7 @@ npm run tauri:ios
 ## Project Structure
 
 ```
-hourglass/
+MeMo/
 ├── src/
 │   ├── components/          # Reusable UI components
 │   │   ├── ui/              # Glass components, buttons, tabs
@@ -144,10 +144,6 @@ Modify `src/components/ui/GlassComponents.tsx` for glassmorphism presets.
 3. Make your changes
 4. Run tests: `npm run lint && npm run typecheck`
 5. Submit a pull request
-
-## License
-
-MIT License - feel free to use for personal or commercial projects.
 
 ## Acknowledgments
 

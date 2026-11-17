@@ -7,6 +7,25 @@
     "core:default",
     "sql:allow-select",
     "sql:allow-execute",
-    "clipboard-manager:allow-write-text"
+    "clipboard-manager:allow-write-text",
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install",
+    "process:allow-restart",
+    "fs:allow-app-write-recursive",
+    "os:allow-platform",
+    "opener:default",
+    "android-installer:default",
+    "shoon-alarm:default",
+    "notification:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        "https://github.com/Xennus352/MeMo/**",
+        "https://api.github.com/repos/Xennus352/MeMo/**",
+        "https://objects.githubusercontent.com/**",
+        "https://release-assets.githubusercontent.com/**"
+      ]
+    }
   ]
 }

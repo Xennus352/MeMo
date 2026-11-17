@@ -1,5 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, useScroll, useTransform, useReducedMotion } from 'motion/react';
+import { cn } from '@/utils/helpers';
 
 interface ScrollShrinkProps {
   children: React.ReactNode;
@@ -9,19 +10,30 @@ interface ScrollShrinkProps {
   index?: number;
 }
 
-/**
- * Premium scroll-linked animation for milestone timeline cards:
- * as a card travels from the top to the bottom of the viewport it smoothly
- * shrinks (scale 1 → 0.75), drifts slightly downward, and fades out. The
- * values are driven straight from scroll progress - no React re-renders while
- * scrolling, and scrolling back up reverses the effect naturally.
- */
-export const ScrollShrink: React.FC<ScrollShrinkProps> = ({ children, className, index }) => {
+/** Phone-sized viewports use a compositor-driven CSS scroll animation instead
+ *  of Motion's per-frame JS updates; older WebViews simply render statically. */
+const PHONE_QUERY = '(max-width: 820px)';
+
+const useIsPhone = (): boolean => {
+  const [phone, setPhone] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(PHONE_QUERY).matches : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_QUERY);
+    const onChange = () => setPhone(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return phone;
+};
+
+const supportsScrollTimeline = (): boolean =>
+  typeof CSS !== 'undefined' &&
+  typeof CSS.supports === 'function' &&
+  CSS.supports('animation-timeline: view()');
+
+const ScrollShrinkAnimated: React.FC<ScrollShrinkProps> = ({ children, className }) => {
   const ref = useRef<HTMLDivElement>(null);
-  const reduceMotion = useReducedMotion();
-  // At least the first three cards are pinned to full size; the scroll effect
-  // only applies to later cards as they travel toward the bottom edge.
-  const pinned = index !== undefined && index < 3;
 
   const { scrollYProgress } = useScroll({
     target: ref,
@@ -36,17 +48,43 @@ export const ScrollShrink: React.FC<ScrollShrinkProps> = ({ children, className,
   const opacity = useTransform(scrollYProgress, [0, 0.5, 0.85, 1], [1, 1, 0.25, 0]);
   const y = useTransform(scrollYProgress, [0, 0.55, 1], [0, 10, 48]);
 
-  if (reduceMotion || pinned) {
-    return (
-      <div ref={ref} className={className}>
-        {children}
-      </div>
-    );
-  }
-
   return (
     <motion.div ref={ref} style={{ scale, opacity, y }} className={className}>
       {children}
     </motion.div>
   );
+};
+
+/**
+ * Premium scroll-linked animation for milestone timeline cards:
+ * as a card travels up the viewport it settles in smoothly, with a soft
+ * shrink/fade where it enters from the bottom edge. React re-renders never
+ * happen while scrolling.
+ *
+ * Phones run the same look as a CSS scroll-timeline animation, which the
+ * browser drives on the compositor: no JS work and no per-card scroll
+ * listeners. WebViews without scroll-timeline support render cards statically
+ * (still perfectly smooth).
+ */
+export const ScrollShrink: React.FC<ScrollShrinkProps> = ({ children, className, index }) => {
+  const reduceMotion = useReducedMotion();
+  const phone = useIsPhone();
+  const [cssTimeline] = useState(supportsScrollTimeline);
+  // At least the first three cards are pinned to full size; the scroll effect
+  // only applies to later cards as they travel toward the bottom edge.
+  const pinned = index !== undefined && index < 3;
+
+  if (reduceMotion || pinned) {
+    return <div className={className}>{children}</div>;
+  }
+
+  if (phone) {
+    return cssTimeline ? (
+      <div className={cn('scroll-shrink', className)}>{children}</div>
+    ) : (
+      <div className={className}>{children}</div>
+    );
+  }
+
+  return <ScrollShrinkAnimated className={className}>{children}</ScrollShrinkAnimated>;
 };

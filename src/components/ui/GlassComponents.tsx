@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/utils/helpers';
 
 /* ===== GlassView ===== */
@@ -83,9 +83,9 @@ export const MotionGlassCard = ({
   // Callers pass delay in milliseconds (`60`, `index * 60`); Motion expects
   // seconds. Without this conversion those cards stay invisible for a minute.
   const motionProps: any = {
-    initial: animateIn ? { opacity: 0, y: 20, scale: 0.98 } : false,
+    initial: animateIn ? { opacity: 0, y: 14, scale: 0.99 } : false,
     animate: { opacity: 1, y: 0, scale: 1 },
-    transition: { duration: 0.4, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] },
+    transition: { duration: 0.28, delay: Math.min(delay, 180) / 1000, ease: [0.16, 1, 0.3, 1] },
     className: cn(
       'relative overflow-hidden',
       elevated ? 'card-elevated' : 'card',
@@ -281,32 +281,36 @@ export const ModalBackdrop = ({ isOpen, onClose, children, className }: ModalBac
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   return (
-    <motion.div
-      initial={false}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed inset-0 z-[200] bg-black/45 backdrop-blur-sm overflow-y-auto overscroll-contain"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 40, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -20, scale: 0.96 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className={cn(
-          'flex items-end sm:items-center justify-center min-h-[100dvh]',
-          'p-3 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))]',
-          className
-        )}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </motion.div>
-    </motion.div>
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+          className="fixed inset-0 z-[200] bg-black/45 backdrop-blur-sm overflow-y-auto overscroll-contain"
+          onClick={onClose}
+        >
+          <motion.div
+            key="panel"
+            initial={{ opacity: 0, y: 72, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 48, scale: 0.94 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 26, mass: 0.9 }}
+            className={cn(
+              'flex items-end sm:items-center justify-center min-h-[100dvh]',
+              'p-3 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))]',
+              className
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 

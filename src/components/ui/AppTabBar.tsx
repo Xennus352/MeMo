@@ -1,11 +1,12 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Heart, Calendar, Users } from 'lucide-react';
+import { Heart, Calendar, Users, Megaphone } from 'lucide-react';
 import { TabBar } from './GlassComponents';
 
 const TABS = [
   { id: 'home', label: 'Home', icon: <Heart className="w-5 h-5" />, path: '/' },
   { id: 'milestones', label: 'Milestones', icon: <Calendar className="w-5 h-5" />, path: '/milestones' },
+  { id: 'notices', label: 'Notices', icon: <Megaphone className="w-5 h-5" />, path: '/notices' },
   { id: 'pairing', label: 'Partner', icon: <Users className="w-5 h-5" />, path: '/pairing' },
 ] as const;
 

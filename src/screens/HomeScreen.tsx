@@ -6,7 +6,8 @@ import { cn, dateKey, formatDateKey, getRelativeTime, diffDays, calculatePredict
 import { GlassView, Button, GlassCard, MotionGlassCard, FAB } from '@/components/ui/GlassComponents';
 import { PeriodCalendar } from '@/components/period/PeriodCalendar';
 import { PeriodLogModal } from '@/components/period/PeriodLogModal';
-import { MilestoneCard, AnniversaryHero, AnniversaryCard, MilestoneModal, AnniversaryModal } from '@/components/milestone/MilestoneComponents';
+import { AnniversaryHero, AnniversaryCard, MilestoneModal, AnniversaryModal } from '@/components/milestone/MilestoneComponents';
+import { PresenceChip } from '@/components/ui/PresenceChip';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { useUserStore } from '@/stores';
 import { usePeriodStore } from '@/stores';
@@ -98,25 +99,34 @@ export const HomeScreen: React.FC = () => {
   return (
     <div className="min-h-screen bg-bg pb-32 safe-bottom">
       {/* Status Bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-xl" />
+      <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-sm" />
 
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-xl border-b border-border/60"
+        transition={{ duration: 0.3 }}
+        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-sm border-b border-border/60"
       >
         <div className="app-header-inner flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link to="/milestones" className="p-2 rounded-xl hover:bg-surface-subtle transition-colors flex-shrink-0">
               <Calendar className="w-5 h-5 text-text-secondary" />
             </Link>
+            <img
+              src="/memo-logo.png"
+              alt="MeMo"
+              draggable={false}
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl object-cover ring-1 ring-white/10 flex-shrink-0 select-none pointer-events-none drop-shadow-[0_2px_14px_rgba(235,154,192,0.45)]"
+            />
             <div className="min-w-0">
-              <h1 className="text-h3 sm:text-h2 font-bold text-text truncate">MeMo 💕</h1>
-              <p className="text-responsive-xs text-text-muted">
-                {profile?.name ? `Hello, ${profile.name}` : 'Welcome'}
-              </p>
+              <h1 className="text-h3 sm:text-h2 font-bold text-text truncate">MeMo</h1>
+              <div className="flex items-center gap-2">
+                <p className="text-responsive-xs text-text-muted whitespace-nowrap">
+                  {profile?.name ? `Hello, ${profile.name}` : 'Welcome'}
+                </p>
+                {pair && <PresenceChip compact />}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -139,7 +149,7 @@ export const HomeScreen: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
+            transition={{ duration: 0.3 }}
           >
             <MotionGlassCard className="p-4" elevated>
               <div className="flex items-center justify-between">
@@ -147,7 +157,7 @@ export const HomeScreen: React.FC = () => {
                   <motion.div
                     initial={{ scale: 0, rotate: -180 }}
                     animate={{ scale: 1, rotate: 0 }}
-                    transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 20 }}
+                    transition={{ delay: 0.05, type: 'spring', stiffness: 320, damping: 24 }}
                     whileHover={{ scale: 1.05 }}
                     className="w-14 h-14 rounded-2xl flex items-center justify-center"
                     style={{ backgroundColor: `${phaseColor}1A` }}
@@ -278,32 +288,6 @@ export const HomeScreen: React.FC = () => {
             </div>
           </MotionGlassCard>
         </motion.div>
-
-        {/* Upcoming Milestones */}
-        {upcoming.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.6 }}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-text">Upcoming Milestones</h3>
-              <Link to="/milestones" className="text-body-sm text-accent font-medium">View All</Link>
-            </div>
-            <div className="space-y-3 max-h-60 overflow-y-auto">
-              {upcoming.slice(0, 3).map((milestone, index) => (
-                <MilestoneCard
-                  key={milestone.id}
-                  milestone={milestone}
-                  currentUserRole={profile?.role || 'girl'}
-                  onEdit={m => { setEditingMilestone(m); setShowMilestoneModal(true); }}
-                  onDelete={handleDeleteMilestone}
-                  onShare={m => navigate(`/milestones?share=${m.id}`)}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
 
         {/* Other Anniversaries */}
         {anniversaries.filter(a => a.id !== primary?.id).length > 0 && (
