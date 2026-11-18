@@ -459,16 +459,17 @@ export const NoticeboardScreen: React.FC = () => {
   const ticketProps = { ownerName: partnerName, voiceOn };
 
   return (
-    <div className="min-h-screen bg-bg pb-32 safe-bottom">
+    <div className="min-h-screen bg-bg">
       {/* Status Bar */}
       <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-sm" />
+      <div aria-hidden className="header-fade" />
 
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.28 }}
-        className="fixed top-0 left-0 right-0 z-40 border-b border-border/60 bg-bg/85 px-4 pb-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm safe-top"
+        className="fixed top-0 left-0 right-0 z-40 border-b border-border/60 bg-bg/85 px-4 pb-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm"
       >
         <div className="app-header-inner flex items-center justify-between">
           <button onClick={() => navigate('/')} className="p-2 rounded-xl hover:bg-surface-subtle transition-colors" aria-label="Back to home">
@@ -487,7 +488,7 @@ export const NoticeboardScreen: React.FC = () => {
       </motion.div>
 
       {/* Main content */}
-      <div className="app-content space-y-6 px-4 pb-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 96px)' }}>
+      <div className="app-content space-y-6 px-4 pt-header pb-dock">
 
         {/* Chapter — the day, huge, and the board's one-line promise */}
         <motion.section

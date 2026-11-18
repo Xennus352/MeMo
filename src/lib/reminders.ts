@@ -133,8 +133,9 @@ export const notify = async (title: string, body: string, tag?: string): Promise
 const notifyOnce = async (key: string, title: string, body: string): Promise<boolean> => {
   if (hasFired(key)) return false;
   const delivered = await notify(title, body, key);
-  // Speak the reminder aloud too (opt-in via Settings → Spoken reminders)
-  void speakReminder(`${title.replace(/^MeMo 💕\s*/, '')}. ${body}`);
+  // Speak the reminder aloud too (opt-in via Settings → Spoken reminders).
+  // The body is the whole message; the title is already on screen.
+  void speakReminder(body);
   if (delivered) markFired(key);
   return delivered;
 };

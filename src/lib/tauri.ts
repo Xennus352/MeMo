@@ -1200,9 +1200,15 @@ export async function enterPairingCode(code: string, currentDeviceId: string, cu
 export async function ensureReminderChannel(): Promise<void> {
   if (!(await isTauriEnv())) return;
   try {
-    const { createChannel, channels, Importance, Visibility } = await import('@tauri-apps/plugin-notification');
-    const existing = await channels().catch(() => [] as { id: string }[]);
-    if (existing?.some(c => c.id === 'reminders')) return;
+    const { createChannel, channels, removeChannel, Importance, Visibility } = await import('@tauri-apps/plugin-notification');
+    const existing = await channels().catch(() => [] as { id: string; importance?: number }[]);
+    const current = existing?.find(c => c.id === 'reminders');
+    // Android freezes a channel's importance and sound after creation, so a
+    // channel left at Low/None by an older install can never ring. Rebuild it.
+    if (current && current.importance === Importance.High) return;
+    if (current) {
+      await removeChannel('reminders').catch(() => {});
+    }
     await createChannel({
       id: 'reminders',
       name: 'MeMo 💕 Reminders',
@@ -1214,6 +1220,25 @@ export async function ensureReminderChannel(): Promise<void> {
     });
   } catch (error) {
     console.warn('Could not create the reminders channel:', error);
+  }
+}
+
+/** Post a real Android/iOS notification right now — used by Settings → Test
+ *  reminder so the phone's sound and permission can be checked on the spot. */
+export async function sendTestNotification(title: string, body: string): Promise<boolean> {
+  if (!(await isTauriEnv())) return false;
+  try {
+    await ensureReminderChannel();
+    const plugin = await import('@tauri-apps/plugin-notification');
+    if (!(await plugin.isPermissionGranted())) {
+      const result = await plugin.requestPermission();
+      if (result !== 'granted') return false;
+    }
+    plugin.sendNotification({ title, body, channelId: 'reminders' });
+    return true;
+  } catch (error) {
+    console.warn('Could not post the test notification:', error);
+    return false;
   }
 }
 

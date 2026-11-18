@@ -1,14 +1,18 @@
 /**
  * Spoken reminders — MeMo tells you about the notification instead of only
- * buzzing it. One voice only: the local Nara Mini v1 Shoon voice (Burmese &
- * English) via scripts/nara_tts_server.py. No pickers, no alternates.
+ * buzzing it. One voice only: Nara Mini v1 (Shoon).
  *
- * Reminder texts are Burmese throughout. If the local service is unreachable
- * we fall back to whatever the browser's speech synthesis has for Myanmar
- * (or stay silent — the notification itself always lands normally).
+ * Order of play:
+ *  1. The bundled voice pack (`src/public/voice/*.m4a`) for the fixed Burmese
+ *     reminder lines — offline, instant, no server, no phone voice needed.
+ *  2. The local Nara server, for free-form text (notices, custom names).
+ *  3. The device's own TTS as a last resort.
+ *
+ * The notification itself always lands normally even when nothing can speak.
  */
 
-import { useVoiceStore, useUserStore, useIslandStore } from '@/stores';
+import { useVoiceStore, useIslandStore } from '@/stores';
+import { builtinVoiceUrl } from '@/lib/voicePack';
 import { isTauri } from '@tauri-apps/api/core';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -70,6 +74,21 @@ const fetchNaraWav = async (text: string): Promise<Blob> => {
   return blob;
 };
 
+/** Shipped audio for a fixed line — no network, no server, works on any phone. */
+const fetchBuiltinWav = async (text: string): Promise<Blob | null> => {
+  const url = builtinVoiceUrl(text);
+  if (!url) return null;
+  const cached = wavCache.get(url);
+  if (cached) return cached;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const raw = await res.blob();
+  // Some asset servers hand .m4a back as octet-stream; the tag matters to <audio>
+  const blob = raw.type.startsWith('audio/') ? raw : new Blob([raw], { type: 'audio/mp4' });
+  wavCache.set(url, blob);
+  return blob;
+};
+
 let audio: HTMLAudioElement | null = null;
 
 const playBlob = (blob: Blob): Promise<boolean> =>
@@ -92,7 +111,7 @@ const playBlob = (blob: Blob): Promise<boolean> =>
     }
   });
 
-export type SpokenResult = 'nara' | 'system' | 'none';
+export type SpokenResult = 'builtin' | 'nara' | 'system' | 'none';
 
 /**
  * Speak a reminder aloud in Burmese (Nara Mini v1 · Shoon).
@@ -105,13 +124,22 @@ export const speakReminder = async (text: string): Promise<SpokenResult> => {
   // The island lights up for as long as Shoon speaks
   useIslandStore.getState().startSpeaking(text);
   const speak = async (): Promise<SpokenResult> => {
+    // 1. Bundled Shoon audio — offline and instant for the fixed lines
+    try {
+      const builtin = await fetchBuiltinWav(text);
+      if (builtin && (await playBlob(builtin))) return 'builtin';
+    } catch (error) {
+      console.warn('Bundled voice could not play:', error);
+    }
+    // 2. Local Nara server (desktop, or a phone on the same Wi-Fi)
     try {
       const ok = await playBlob(await fetchNaraWav(text));
       if (ok) return 'nara';
     } catch (error) {
       console.warn('Nara TTS unreachable — trying the device voice:', error);
     }
-    // On Android the webview has no Myanmar voice — hand it to the device's own TTS instead
+    // 3. On Android the webview usually has no Myanmar voice — hand it to the
+    //    device's own TTS instead
     if (await isTauri()) {
       try {
         await invoke('plugin:shoon-alarm|speak_text', { text });
@@ -151,11 +179,7 @@ export const stopReminderPlayback = (): void => {
   useIslandStore.getState().clearIsland();
 };
 
-/** Test phrase used by the Settings test button — greets the user by their profile name when set */
-export const speakTest = async (): Promise<SpokenResult> => {
-
-  const { profile } = useUserStore.getState();
-  const name = profile?.name?.trim();
-  const greeting = name ? `မင်္ဂလာပါ ${name}။` : 'မင်္ဂလာပါ။';
-  return speakReminder(`${greeting} သင်၏ အသိပေးချက်များကို ဤအသံဖြင့် ကြားရမှာဖြစ်ပါတယ်။`);
-};
+/** Test phrase used by the Settings test button. Fixed (no profile name) so it
+ *  plays straight from the bundled voice pack — works with no server. */
+export const speakTest = async (): Promise<SpokenResult> =>
+  speakReminder('မင်္ဂလာပါ။ သင်၏ အသိပေးချက်များကို ဤအသံဖြင့် ကြားရမှာဖြစ်ပါတယ်။');

@@ -586,25 +586,17 @@ export const SwipeableMilestoneCard: React.FC<SwipeableMilestoneCardProps> = ({
       >
         <GlassCard className="p-4" style={{ background: 'var(--color-surface)' }}>
           <div className="flex items-start gap-4">
-            <motion.div
-              animate={{ scale: [1, 1.18, 1], rotate: [0, -6, 6, 0] }}
-              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 bg-accent-light"
-            >
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 bg-accent-light">
               <span>{milestone.emoji}</span>
-            </motion.div>
+            </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-text truncate">{milestone.title}</h3>
               <p className="text-body-sm text-text-muted mt-0.5">{new Date(milestone.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
               {typeof milestone.note === 'string' && milestone.note.trim() && (
                 <p className="text-body-sm text-text-secondary mt-2 line-clamp-2">{milestone.note}</p>
               )}
-              <div className="flex items-center gap-4 mt-3 text-caption text-text-muted">
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-light text-accent">
-                  <Calendar className="w-3 h-3" />
-                  {new Date(milestone.date).toLocaleDateString()}
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-input text-text-secondary normal-case font-medium">
+              <div className="mt-3">
+                <span className="inline-flex px-2 py-0.5 rounded-full bg-input text-caption text-text-secondary font-medium">
                   {creatorName}
                 </span>
               </div>

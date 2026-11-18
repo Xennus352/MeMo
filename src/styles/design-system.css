@@ -327,8 +327,7 @@ body {
     font-size: var(--text-caption);
     line-height: var(--leading-normal);
     font-weight: 500;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    letter-spacing: 0;
     color: var(--color-text-muted);
   }
 }
@@ -817,6 +816,55 @@ body {
 * {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--color-accent) 30%, transparent) transparent;
+}
+
+/* Horizontal rails: swipeable, no visible track */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Fixed-header gutters. Content starts just below the header: 4.5rem covers
+ * the Milestones bar, 5.25rem the taller Home bar, and both add the device
+ * safe-area inset on top.
+ */
+.pt-header {
+  padding-top: calc(4.5rem + env(safe-area-inset-top));
+}
+
+.pt-header-tall {
+  padding-top: calc(5.25rem + env(safe-area-inset-top));
+}
+
+.pb-dock {
+  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+}
+
+/* Soft dissolve so content scrolling under a fixed header never hard-clips */
+.header-fade {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 39;
+  height: calc(4.5rem + env(safe-area-inset-top));
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    var(--color-bg) 0%,
+    var(--color-bg) 55%,
+    color-mix(in srgb, var(--color-bg) 70%, transparent) 82%,
+    transparent 100%
+  );
+}
+
+.header-fade-tall {
+  height: calc(5.25rem + env(safe-area-inset-top));
 }
 
 /* ===== MOTION UTILITIES ===== */

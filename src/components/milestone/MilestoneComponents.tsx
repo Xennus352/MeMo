@@ -239,25 +239,6 @@ export const AnniversaryCard: React.FC<AnniversaryCardProps> = ({
         )}
         aria-label={`Edit anniversary: ${anniversary.label}`}
       >
-        {/* Floating love particles (decorative) */}
-        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
-          <motion.span
-            animate={{ y: [0, -12, 0], opacity: [0.35, 0.85, 0.35] }}
-            transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
-            className="absolute top-3 right-16 text-accent/60"
-          ><Heart className="w-4 h-4" fill="currentColor" /></motion.span>
-          <motion.span
-            animate={{ y: [0, 10, 0], opacity: [0.3, 0.7, 0.3] }}
-            transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
-            className="absolute bottom-4 left-24 text-secondary/60"
-          ><Heart className="w-3 h-3" fill="currentColor" /></motion.span>
-          <motion.span
-            animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.9, 0.2] }}
-            transition={{ duration: 2.1, repeat: Infinity, ease: 'easeInOut', delay: 1.1 }}
-            className="absolute top-6 left-1/2 text-accent"
-          ><Sparkles className="w-3.5 h-3.5" /></motion.span>
-        </div>
-
         {/* Inner surface */}
         <div
           className="relative rounded-3xl px-4 py-4 sm:px-5 sm:py-5 overflow-hidden"
@@ -267,11 +248,8 @@ export const AnniversaryCard: React.FC<AnniversaryCardProps> = ({
           }}
         >
           <div className="flex items-center gap-4">
-            {/* Emblem with conic ring + heartbeat */}
-            <motion.div
-              initial={false}
-              animate={{ scale: [1, 1.16, 1, 1.12, 1] }}
-              transition={{ duration: 1.4, repeat: Infinity, times: [0, 0.18, 0.36, 0.54, 1], ease: 'easeInOut' }}
+            {/* Emblem with static conic ring */}
+            <div
               className="relative w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] rounded-full flex items-center justify-center flex-shrink-0"
               style={{
                 background: `conic-gradient(from 210deg, var(--color-accent), var(--color-secondary), var(--color-accent))`,
@@ -281,7 +259,7 @@ export const AnniversaryCard: React.FC<AnniversaryCardProps> = ({
               <div className="w-[calc(100%-6px)] h-[calc(100%-6px)] rounded-full bg-surface flex items-center justify-center">
                 {emblem}
               </div>
-            </motion.div>
+            </div>
 
             <div className="flex-1 min-w-0">
               <h3 className="text-h3 font-bold text-text leading-tight truncate">{anniversary.label}</h3>
@@ -294,10 +272,7 @@ export const AnniversaryCard: React.FC<AnniversaryCardProps> = ({
 
           {/* Bottom row: countdown + actions */}
           <div className="flex items-center justify-between gap-3 mt-3.5">
-            <motion.span
-              initial={false}
-              animate={isToday ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-              transition={{ duration: 1.1, repeat: isToday ? Infinity : 0 }}
+            <span
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-caption font-semibold',
                 isToday
@@ -316,7 +291,7 @@ export const AnniversaryCard: React.FC<AnniversaryCardProps> = ({
             >
               {isToday ? <Sparkles className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
               {isToday ? 'Today!' : isPast ? `${Math.abs(daysUntil)} days ago` : `${daysUntil} days left`}
-            </motion.span>
+            </span>
 
             <div className="flex items-center gap-1.5">
               <motion.button
@@ -703,10 +678,8 @@ export const AnniversaryHero: React.FC<AnniversaryHeroProps> = ({ anniversary, c
       className={cn('p-6 relative overflow-hidden', anniversary.isPrimary && 'ring-2 ring-secondary/30', className)}
       elevated
     >
-      <motion.div
-        initial={false}
-        animate={{ opacity: [0.5, 1, 0.5] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+      <div
+        aria-hidden
         className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-secondary/5"
       />
       <div className="relative flex items-center gap-4">
@@ -741,15 +714,10 @@ export const AnniversaryHero: React.FC<AnniversaryHeroProps> = ({ anniversary, c
             </motion.span>
             
             {anniversary.isPrimary && (
-              <motion.span
-                initial={false}
-                animate={{ scale: [1, 1.03, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="flex items-center gap-1 px-3 py-1 rounded-full text-body-sm font-medium bg-secondary-light text-secondary"
-              >
+              <span className="flex items-center gap-1 px-3 py-1 rounded-full text-body-sm font-medium bg-secondary-light text-secondary">
                 <Sparkles className="w-4 h-4" />
                 Primary
-              </motion.span>
+              </span>
             )}
           </div>
         </div>

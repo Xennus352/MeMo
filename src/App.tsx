@@ -3,8 +3,8 @@ import { isTauri } from '@tauri-apps/api/core';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
 import { syncCoupleData, sendHeartbeat, getPartnerStatus, partnerDeviceIdOf } from '@/lib/sync';
-import { checkDueReminders, checkDueNotices, syncScheduledReminders } from '@/lib/reminders';
-import { onLocalMutation } from '@/lib/tauri';
+import { checkDueReminders, checkDueNotices, requestNotificationPermission, syncScheduledReminders } from '@/lib/reminders';
+import { onLocalMutation, ensureReminderChannel } from '@/lib/tauri';
 import { useUserStore } from '@/stores';
 import { usePresenceStore } from '@/stores';
 import { useUpdaterStore } from '@/stores';
@@ -231,6 +231,31 @@ function AppContent() {
       window.clearInterval(noticeInterval);
     };
   }, [initialized, notificationSettings, milestoneItems, noticeItems, anniversaryItems, predictions]);
+
+  // Android 13+ silently drops every notification until POST_NOTIFICATIONS is
+  // granted, and reminders are ON by default. Ask once the app is usable rather
+  // than waiting for the user to find the toggle in Settings.
+  const notificationAsked = useRef(false);
+  useEffect(() => {
+    if (!initialized || !profile || !isTauri()) return;
+    if (notificationAsked.current) return;
+    const timer = window.setTimeout(async () => {
+      // Mark inside the timer: if this effect is torn down before it fires
+      // (profile settling), the next run still gets to ask.
+      if (notificationAsked.current) return;
+      notificationAsked.current = true;
+      try {
+        await ensureReminderChannel();
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          showToast('Allow notifications in Settings so reminders can reach you', 'error');
+        }
+      } catch (error) {
+        console.warn('Notification permission request failed:', error);
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [initialized, profile, showToast]);
 
   // Fire the success toast on the transition from unpaired → paired
   useEffect(() => {

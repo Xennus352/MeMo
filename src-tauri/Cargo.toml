@@ -1,6 +1,6 @@
 [package]
 name = "hourglass"
-version = "1.0.0"
+version = "1.0.2"
 description = "MeMo - A private couple space app with period tracking and shared milestones"
 authors = ["MeMo Team"]
 edition = "2021"

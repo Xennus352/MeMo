@@ -409,16 +409,17 @@ export const MilestoneScreen: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-bg pb-32 safe-bottom">
+    <div className="min-h-screen bg-bg">
       {/* Status Bar */}
       <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-sm" />
+      <div aria-hidden className="header-fade" />
 
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.28 }}
-        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-sm border-b border-border/60"
+        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 bg-bg/85 backdrop-blur-sm border-b border-border/60"
       >
         <div className="app-header-inner flex items-center justify-between">
           <Link to="/" className="p-2 rounded-xl hover:bg-surface-subtle transition-colors" aria-label="Back to home">
@@ -436,7 +437,7 @@ export const MilestoneScreen: React.FC = () => {
       </motion.div>
 
       {/* Main Content */}
-      <div className="app-content pt-24 pb-4 px-4 space-y-6">
+      <div className="app-content pt-header pb-dock px-4 space-y-5">
         {/* Search & Filter */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -501,52 +502,28 @@ export const MilestoneScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Add Buttons */}
+        {/* Add row */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-          className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3"
+          transition={{ duration: 0.28, delay: 0.05 }}
+          className="grid grid-cols-2 gap-2"
         >
           <motion.button
-            whileTap={{ scale: 0.98 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => { setEditingMilestone(null); setShowMilestoneModal(true); }}
-            className="p-4 rounded-xl bg-input border border-border hover:bg-surface-subtle transition-all text-left"
+            className="flex items-center justify-center gap-2 h-12 rounded-xl bg-accent-light border border-accent/20 text-accent text-body-sm font-semibold transition-colors hover:brightness-105"
           >
-            <div className="flex items-center gap-3">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ scale: { type: 'spring', stiffness: 300, damping: 20 }, delay: 0.05 }}
-                className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center"
-              >
-                <Sparkles className="w-5 h-5 text-accent" />
-              </motion.div>
-              <div>
-                <p className="font-medium text-text">Add Milestone</p>
-                <p className="text-caption text-text-muted normal-case">Memory or event</p>
-              </div>
-            </div>
+            <Sparkles className="w-4 h-4" />
+            Add Milestone
           </motion.button>
           <motion.button
-            whileTap={{ scale: 0.98 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => { setEditingAnniversary(null); setShowAnniversaryModal(true); }}
-            className="p-4 rounded-xl bg-input border border-border hover:bg-surface-subtle transition-all text-left"
+            className="flex items-center justify-center gap-2 h-12 rounded-xl bg-secondary-light border border-secondary/20 text-secondary text-body-sm font-semibold transition-colors hover:brightness-105"
           >
-            <div className="flex items-center gap-3">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ scale: { type: 'spring', stiffness: 300, damping: 20 }, delay: 0.1 }}
-                className="w-10 h-10 rounded-xl bg-secondary-light flex items-center justify-center"
-              >
-                <Award className="w-5 h-5 text-secondary" />
-              </motion.div>
-              <div>
-                <p className="font-medium text-text">Add Anniversary</p>
-                <p className="text-caption text-text-muted normal-case">Relationship date</p>
-              </div>
-            </div>
+            <Award className="w-4 h-4" />
+            Add Anniversary
           </motion.button>
         </motion.div>
 
@@ -555,7 +532,7 @@ export const MilestoneScreen: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
+            transition={{ duration: 0.3, delay: 0.06 }}
           >
             <AnniversaryCard
               anniversary={visiblePrimary}
@@ -572,7 +549,7 @@ export const MilestoneScreen: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.3 }}
+            transition={{ duration: 0.3, delay: 0.09 }}
           >
             <h3 className="font-semibold text-text mb-3">Anniversaries</h3>
             <div className="space-y-4">
@@ -596,7 +573,7 @@ export const MilestoneScreen: React.FC = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.4 }}
+          transition={{ duration: 0.3, delay: 0.12 }}
         >
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-text">

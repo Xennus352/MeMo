@@ -7,7 +7,7 @@ import { persist } from 'zustand/middleware';
  * locally by scripts/nara_tts_server.py, or it is off.
  */
 interface VoiceState {
-  /** Master switch — AI Voice is OFF until the user opts in */
+  /** Master switch — on by default now that the Burmese voice ships inside the app */
   enabled: boolean;
   /** Base URL of the local Nara TTS service (scripts/nara_tts_server.py) */
   naraUrl: string;
@@ -18,11 +18,17 @@ interface VoiceState {
 export const useVoiceStore = create<VoiceState>()(
   persist(
     (set) => ({
-      enabled: false,
+      enabled: true,
       naraUrl: 'http://127.0.0.1:8899',
       setEnabled: (enabled) => set({ enabled }),
       setNaraUrl: (naraUrl) => set({ naraUrl: naraUrl.trim() }),
     }),
-    { name: 'memo-voice-store' }
+    {
+      name: 'memo-voice-store',
+      // v2: the voice pack is bundled, so existing installs that never found
+      // the toggle should start hearing reminders too. Settings can turn it off.
+      version: 2,
+      migrate: (persisted) => ({ ...(persisted as object), enabled: true }) as unknown as VoiceState,
+    }
   )
 );

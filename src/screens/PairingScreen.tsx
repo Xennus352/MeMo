@@ -124,16 +124,17 @@ export const PairingScreen: React.FC = () => {
   const roleLabel = profile?.role === 'boy' ? 'Boy' : 'Girl';
 
   return (
-    <div className="min-h-dvh bg-bg pb-40 safe-bottom">
+    <div className="min-h-dvh bg-bg">
       {/* Status Bar */}
       <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-sm" />
+      <div aria-hidden className="header-fade" />
 
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-sm border-b border-border/60"
+        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 bg-bg/85 backdrop-blur-sm border-b border-border/60"
       >
         <div className="app-header-inner flex items-center justify-between">
           <Link to="/" className="p-2 rounded-xl hover:bg-surface-subtle transition-colors" aria-label="Back to home">
@@ -145,7 +146,7 @@ export const PairingScreen: React.FC = () => {
       </motion.div>
 
       {/* Main Content */}
-      <div className="app-content pb-4 px-4 space-y-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 96px)' }}>
+      <div className="app-content px-4 pt-header pb-dock space-y-4">
         {/* In-page tabs */}
         <div
           role="tablist"

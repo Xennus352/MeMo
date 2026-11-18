@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { open, mkdir, exists, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { fetch as nativeFetch } from '@tauri-apps/plugin-http';
+import { fetchBuiltinVoice } from '@/lib/voicePack';
 import { useVoiceStore } from '@/stores';
 
 /** Stable short hash for a reminder text (cache key) */
@@ -24,23 +25,60 @@ const hashText = (text: string): string => {
   return (h >>> 0).toString(16);
 };
 
-/** Path to the cached Shoon WAV for `text`, generating it first when possible. Null when unavailable. */
+/** Path to the cached Shoon voice file for `text`, preparing it first when possible.
+ *  The bundled pack covers the fixed Burmese lines (no server needed); the Nara
+ *  server is only used for free-form text such as notices. Null when unavailable. */
 export const ensureShoonWav = async (text: string): Promise<string | null> => {
   const { enabled, naraUrl } = useVoiceStore.getState();
   if (!enabled) return null;
-  if (!(await isTauri())) return null; // native-only: WAV caching is for the locked-phone flow
+  if (!(await isTauri())) return null; // native-only: voice caching is for the locked-phone flow
 
-  const id = `shoon-${hashText(text)}`;
-  const fileName = `shoon/${id}.wav`;
+  const hash = hashText(text);
+  const builtinName = `shoon/builtin-${hash}.m4a`;
+  const naraName = `shoon/nara-${hash}.wav`;
 
-  try {
-    if (await exists(fileName, { baseDir: BaseDirectory.AppCache })) {
-      return await join(await appCacheDir(), fileName);
+  const cachedPath = async (name: string): Promise<string | null> => {
+    try {
+      return (await exists(name, { baseDir: BaseDirectory.AppCache }))
+        ? await join(await appCacheDir(), name)
+        : null;
+    } catch {
+      return null; // Cache read failed — regenerate below
     }
-  } catch {
-    // Cache read failed — regenerate below
+  };
+
+  const already = (await cachedPath(builtinName)) ?? (await cachedPath(naraName));
+  if (already) return already;
+
+  const write = async (name: string, bytes: Uint8Array): Promise<string | null> => {
+    try {
+      await mkdir('shoon', { baseDir: BaseDirectory.AppCache, recursive: true });
+      const file = await open(name, {
+        write: true,
+        create: true,
+        truncate: true,
+        baseDir: BaseDirectory.AppCache,
+      });
+      try {
+        await file.write(bytes);
+      } finally {
+        await file.close();
+      }
+      return await join(await appCacheDir(), name);
+    } catch (error) {
+      console.warn('Could not cache the Shoon voice file — the alarm will fall back to device TTS:', error);
+      return null;
+    }
+  };
+
+  // 1. A bundled line — plays offline on any phone
+  const builtin = await fetchBuiltinVoice(text);
+  if (builtin) {
+    const path = await write(builtinName, new Uint8Array(await builtin.arrayBuffer()));
+    if (path) return path;
   }
 
+  // 2. Free-form text — ask the local Nara server
   try {
     const res = await nativeFetch(`${naraUrl.replace(/\/+$/, '')}/tts`, {
       method: 'POST',
@@ -48,22 +86,9 @@ export const ensureShoonWav = async (text: string): Promise<string | null> => {
       body: JSON.stringify({ text }),
     });
     if (!res.ok) return null;
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    await mkdir('shoon', { baseDir: BaseDirectory.AppCache, recursive: true });
-    const file = await open(fileName, {
-      write: true,
-      create: true,
-      truncate: true,
-      baseDir: BaseDirectory.AppCache,
-    });
-    try {
-      await file.write(bytes);
-    } finally {
-      await file.close();
-    }
-    return await join(await appCacheDir(), fileName);
+    return await write(naraName, new Uint8Array(await res.arrayBuffer()));
   } catch (error) {
-    console.warn('Could not pre-generate the Shoon WAV — the alarm will fall back to device TTS:', error);
+    console.warn('Could not pre-generate the Shoon voice — the alarm will fall back to device TTS:', error);
     return null;
   }
 };

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Check, User, Bell, Palette, Globe, Database, Share2, Download, Upload, Trash2, Shield, Info, Moon, Sun, Monitor, Heart, Users, Droplet, Droplets, Sparkles, Calendar, Clock, Camera, Music, Plane, Car, Home, Baby, Award, Eye, Edit2, ChevronRight, ChevronLeft, Volume2, Layers, MoveHorizontal, Circle, MoveDiagonal, Paintbrush, Shuffle, SlidersHorizontal, Waves } from 'lucide-react';
 import { cn, dateKey, formatDateKeyFull } from '@/utils/helpers';
-import { exportData, importData, unpairRemoteDevice } from '@/lib/tauri';
+import { exportData, importData, sendTestNotification, unpairRemoteDevice } from '@/lib/tauri';
 import { DatePickerField } from '@/components/ui/CalendarPicker';
 import { GlassView, Button, GlassCard, MotionGlassCard, ModalBackdrop } from '@/components/ui/GlassComponents';
 import { UserRole, NotificationSettings, AppSettings } from '@/types';
@@ -26,8 +26,8 @@ interface SettingsModalProps {
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'notifications', label: 'Alerts', icon: Bell },
+  { id: 'appearance', label: 'Theme', icon: Palette },
   { id: 'data', label: 'Data', icon: Database },
   { id: 'about', label: 'About', icon: Info },
 ] as const;
@@ -119,6 +119,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setPermState(await getNotificationPermissionState());
     // The Dynamic Island IS what a reminder looks like with MeMo open
     await notify('MeMo 💕', 'အသိပေးချက်များ ဖြစ်ပါတယ်။', 'memo-test');
+    // Native: also post a real OS notification so the phone's sound is testable
+    const posted = await sendTestNotification('MeMo 💕', 'အသိပေးချက်များ ဖြစ်ပါတယ်။');
+    if (isTauri() && !posted) {
+      showToast('Allow notifications so reminders can reach you', 'error');
+      return;
+    }
     showToast('Test reminder sent 💕', 'success');
   };
 
@@ -127,7 +133,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleTestVoice = async () => {
     const result = await speakTest();
     showToast(
-      result === 'nara' ? 'Shoon 💕 is Speaking'
+      result === 'builtin' || result === 'nara' ? 'Shoon 💕 is Speaking'
         : result === 'system' ? 'Speaking via the Myanmar system voice 💕'
         : 'No voice output available on this device',
       result === 'none' ? 'error' : 'success'
@@ -1021,163 +1027,107 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   );
 
   const renderAboutTab = () => (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className="space-y-6"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-        className="text-center py-4"
-      >
-        <motion.img
+    <div className="space-y-4">
+      {/* Compact identity */}
+      <div className="flex items-center gap-4">
+        <img
           src="/memo-logo.png"
           alt="MeMo"
           draggable={false}
-          initial={{ scale: 0, rotate: -180, opacity: 0 }}
-          animate={{ scale: 1, rotate: 0, opacity: 1 }}
-          transition={{ delay: 0.2, type: 'spring', stiffness: 220, damping: 20 }}
-          className="w-28 h-28 rounded-2xl object-cover ring-1 ring-white/10 mx-auto mb-4 select-none pointer-events-none drop-shadow-[0_6px_24px_rgba(235,154,192,0.45)]"
+          className="w-16 h-16 rounded-2xl object-cover ring-1 ring-white/10 flex-shrink-0 select-none pointer-events-none drop-shadow-[0_4px_16px_rgba(235,154,192,0.4)]"
         />
-        <h3 className="text-h2 font-bold text-text">MeMo</h3>
-        <p className="text-text-muted mt-1">Version 1.0.0</p>
-        <p className="text-caption text-text-muted mt-2">Your private couple space</p>
-      </motion.div>
+        <div className="min-w-0">
+          <h3 className="text-h3 font-bold text-text leading-tight">MeMo</h3>
+          <p className="text-body-sm text-text-muted">Version 1.0.2</p>
+          <p className="text-caption text-text-muted mt-0.5">Your private couple space</p>
+        </div>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.4 }}
-        className="space-y-3"
-      >
-        <MotionGlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center"
-              >
-                <Shield className="w-5 h-5 text-accent" />
-              </motion.div>
-              <div>
-                <p className="font-medium text-text">Privacy First</p>
-                <p className="text-caption text-text-muted">Local-only, no cloud, no tracking</p>
-              </div>
+      <div className="space-y-3">
+        <GlassCard className="p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center flex-shrink-0">
+              <Shield className="w-5 h-5 text-accent" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-medium text-text">Privacy first</p>
+              <p className="text-body-sm text-text-muted mt-0.5">
+                Everything stays on your devices. No cloud, no account, no tracking.
+              </p>
             </div>
           </div>
-        </MotionGlassCard>
+        </GlassCard>
 
-        <MotionGlassCard className="p-4">
-          <div className="flex items-center gap-3">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 20 }}
-              className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center flex-shrink-0"
-            >
+        <GlassCard className="p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center flex-shrink-0">
               <Volume2 className="w-5 h-5 text-accent" />
-            </motion.div>
+            </div>
             <div className="min-w-0">
-              <p className="font-medium text-text">AI Voice</p>
-              <p className="text-caption text-text-muted normal-case">Uses Nara Mini v1 by Nara contributors, a Kokoro-based Burmese and English speech model. <a href="https://naraaudio.app" target="_blank" rel="noreferrer" className="text-accent hover:underline">naraaudio.app</a> · <a href="https://huggingface.co/YeeNyunn/nara-mini-v1" target="_blank" rel="noreferrer" className="text-accent hover:underline">Hugging Face</a>. Licensed under Apache 2.0.</p>
-            </div>
-          </div>
-        </MotionGlassCard>
-
-        <MotionGlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 20 }}
-                className="w-10 h-10 rounded-xl bg-secondary-light flex items-center justify-center"
-              >
-                <Sparkles className="w-5 h-5 text-secondary" />
-              </motion.div>
-              <div>
-                <p className="font-medium text-text">Liquid Glass UI</p>
-                <p className="text-caption text-text-muted">Premium glassmorphism design</p>
+              <p className="font-medium text-text">Burmese voice</p>
+              <p className="text-body-sm text-text-muted mt-0.5">
+                Clips ship inside the app. Optional speech uses Nara Mini v1, a Kokoro-based Burmese and English model by Nara contributors, licensed under Apache 2.0.
+              </p>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-body-sm">
+                <a href="https://naraaudio.app" target="_blank" rel="noreferrer" className="text-accent hover:underline">naraaudio.app</a>
+                <a href="https://huggingface.co/YeeNyunn/nara-mini-v1" target="_blank" rel="noreferrer" className="text-accent hover:underline">Hugging Face</a>
               </div>
             </div>
           </div>
-        </MotionGlassCard>
+        </GlassCard>
 
-        <MotionGlassCard className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 20 }}
-                className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center"
-              >
-                <Heart className="w-5 h-5 text-accent" />
-              </motion.div>
-              <div>
-                <p className="font-medium text-text">Built for Couples</p>
-                <p className="text-caption text-text-muted">Shared milestones & period tracking</p>
-              </div>
-            </div>
-          </div>
-        </MotionGlassCard>
-
-        <MotionGlassCard className="p-4">
-          <div className="flex items-center gap-3">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 20 }}
-              className="w-10 h-10 rounded-xl bg-secondary-light flex items-center justify-center flex-shrink-0"
-            >
+        <GlassCard className="p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-secondary-light flex items-center justify-center flex-shrink-0">
               <Waves className="w-5 h-5 text-secondary" />
-            </motion.div>
+            </div>
             <div className="min-w-0">
-              <p className="font-medium text-text">Serpantinum transitions</p>
-              <p className="text-caption text-text-muted normal-case">Theme switching animations adapted from the Serpantinum shell&apos;s wallpaper effects. <a href="https://github.com/Xennus352/serpantinum" target="_blank" rel="noreferrer" className="text-accent hover:underline">github.com/Xennus352/serpantinum</a> · GNU AGPL-3.0</p>
+              <p className="font-medium text-text">Design credits</p>
+              <p className="text-body-sm text-text-muted mt-0.5">
+                Liquid Glass surfaces and theme-switch transitions adapted from the Serpantinum shell, GNU AGPL-3.0.
+              </p>
+              <a
+                href="https://github.com/Xennus352/serpantinum"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block mt-2 text-body-sm text-accent hover:underline break-all"
+              >
+                github.com/Xennus352/serpantinum
+              </a>
             </div>
           </div>
-        </MotionGlassCard>
+        </GlassCard>
 
-        <MotionGlassCard className="p-4">
-          <div className="flex items-center gap-3">
-            <img
-              src="/memo-logo.png"
-              alt="MeMo"
-              draggable={false}
-              className="w-12 h-12 rounded-2xl object-cover ring-1 ring-white/10 flex-shrink-0 select-none"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="font-medium text-text">App Updates</p>
-              <p className="text-caption text-text-muted normal-case">Version 1.0.0 · updates ship through GitHub Releases</p>
+        <GlassCard className="p-4">
+          <div className="flex flex-col min-[420px]:flex-row min-[420px]:items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <img
+                src="/memo-logo.png"
+                alt=""
+                draggable={false}
+                className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10 flex-shrink-0 select-none"
+              />
+              <div className="min-w-0">
+                <p className="font-medium text-text">App updates</p>
+                <p className="text-caption text-text-muted mt-0.5">Version 1.0.2 · shipped via GitHub Releases</p>
+              </div>
             </div>
             <button
               onClick={() => useUpdaterStore.getState().checkNow()}
-              className="flex-shrink-0 px-4 py-2.5 rounded-xl text-caption font-semibold bg-accent-light text-accent hover:brightness-105 transition-all whitespace-nowrap"
+              className="w-full min-[420px]:w-auto flex-shrink-0 px-4 py-2.5 min-h-[44px] rounded-xl text-body-sm font-semibold bg-accent-light text-accent hover:brightness-105 transition-[filter]"
             >
               Check for updates
             </button>
           </div>
-        </MotionGlassCard>
-      </motion.div>
+        </GlassCard>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.4 }}
-        className="pt-4 border-t border-border"
-      >
-        <div className="pt-2 flex items-center justify-center gap-1.5 text-caption text-text-muted normal-case tracking-wide">
-          <span>Made with love 💕</span>
-          <span className="uppercase font-semibold text-text-secondary">BY SMK</span>
-        </div>
-      </motion.div>
-    </motion.div>
+      <div className="pt-3 border-t border-border">
+        <p className="flex items-center justify-center gap-1.5 text-caption text-text-muted">
+          Made with <Heart className="w-3.5 h-3.5 text-accent" aria-hidden="true" /> by SMK
+        </p>
+      </div>
+    </div>
   );
 
   const renderTab = () => {
@@ -1212,39 +1162,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </motion.div>
 
         {/* Tabs */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.4 }}
-          className="flex flex-wrap gap-1 px-2 py-2 border-b border-border flex-shrink-0"
-        >
-          {TABS.map((tab, index) => (
-            <motion.button
+        <div className="grid grid-cols-5 gap-1 px-2 py-2 border-b border-border flex-shrink-0">
+          {TABS.map(tab => (
+            <button
               key={tab.id}
-              whileTap={{ scale: 0.97 }}
               onClick={() => setActiveTab(tab.id)}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 + 0.2, duration: 0.3 }}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
               className={cn(
-                'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-xl text-caption font-medium whitespace-nowrap transition-all',
+                'flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl text-[11px] font-semibold leading-none transition-colors',
                 activeTab === tab.id
                   ? 'bg-accent-light text-accent'
                   : 'text-text-muted hover:text-text-secondary hover:bg-surface-subtle'
               )}
             >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 20 }}
-                className="w-4 h-4"
-              >
-                <tab.icon className="w-4 h-4" />
-              </motion.div>
-              {tab.label}
-            </motion.button>
+              <tab.icon className="w-[18px] h-[18px]" />
+              <span className="truncate max-w-full">{tab.label}</span>
+            </button>
           ))}
-        </motion.div>
+        </div>
 
         {/* Content */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6">

@@ -193,25 +193,15 @@ export const PeriodCalendar: React.FC<PeriodCalendarProps> = ({
           </span>
 
           {status.isPeriod && (
-            <motion.div
-              initial={false}
-              animate={{ scale: [1, 1.1, 1] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-              className="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex gap-0.5"
-            >
+            <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex gap-0.5">
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: FLOW_COLORS[status.flow || 'medium'] }} />
-            </motion.div>
+            </div>
           )}
 
           {status.isOvulation && (
-            <motion.div
-              initial={false}
-              animate={{ scale: [1, 1.2, 1], rotate: [0, 5, -5, 0] }}
-              transition={{ duration: 2, repeat: Infinity }}
-              className="absolute bottom-0.5 left-1/2 -translate-x-1/2"
-            >
+            <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2">
               <Heart className="w-3 h-3 text-secondary" />
-            </motion.div>
+            </div>
           )}
 
           {status.isPredictedPeriod && !status.isPeriod && (
@@ -342,16 +332,9 @@ export const PeriodCalendar: React.FC<PeriodCalendarProps> = ({
               <div className="text-caption text-text-muted">Days Until Period</div>
             </MotionGlassCard>
             <MotionGlassCard delay={120} className="p-3 text-center">
-              <motion.div
-                initial={false}
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 3, repeat: Infinity }}
-                className="inline-block"
-              >
-                <div className="text-2xl font-bold" style={{ color: getPhaseColor(getCyclePhase(predictions.cycleDay, cycleSettings.cycleLength), false) }}>
-                  {getPhaseLabel(getCyclePhase(predictions.cycleDay, cycleSettings.cycleLength)).split(' ')[0]}
-                </div>
-              </motion.div>
+              <div className="text-2xl font-bold" style={{ color: getPhaseColor(getCyclePhase(predictions.cycleDay, cycleSettings.cycleLength), false) }}>
+                {getPhaseLabel(getCyclePhase(predictions.cycleDay, cycleSettings.cycleLength)).split(' ')[0]}
+              </div>
               <div className="text-caption text-text-muted">Phase</div>
             </MotionGlassCard>
           </div>

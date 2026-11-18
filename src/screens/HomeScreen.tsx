@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Calendar, Droplet, Sparkles, Settings, Users, ChevronRight, Heart } from 'lucide-react';
+import { Calendar, Droplet, Sparkles, Settings, Users, ChevronRight, Heart } from 'lucide-react';
 import { cn, dateKey, formatDateKey, getRelativeTime, diffDays, calculatePredictions, getCyclePhase, getPhaseColor, getPhaseLabel } from '@/utils/helpers';
-import { GlassView, Button, GlassCard, MotionGlassCard, FAB } from '@/components/ui/GlassComponents';
+import { GlassView, Button, GlassCard, MotionGlassCard } from '@/components/ui/GlassComponents';
 import { PeriodCalendar } from '@/components/period/PeriodCalendar';
 import { PeriodLogModal } from '@/components/period/PeriodLogModal';
 import { AnniversaryHero, AnniversaryCard, MilestoneModal, AnniversaryModal } from '@/components/milestone/MilestoneComponents';
@@ -97,16 +97,17 @@ export const HomeScreen: React.FC = () => {
   const phaseColor = predictions ? getPhaseColor(cyclePhase, false) : '#D6336C';
 
   return (
-    <div className="min-h-screen bg-bg pb-32 safe-bottom">
+    <div className="min-h-screen bg-bg">
       {/* Status Bar */}
       <div className="fixed top-0 left-0 right-0 z-40 h-[env(safe-area-inset-top)] bg-bg/80 backdrop-blur-sm" />
+      <div aria-hidden className="header-fade header-fade-tall" />
 
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 safe-top bg-bg/85 backdrop-blur-sm border-b border-border/60"
+        className="fixed top-0 left-0 right-0 z-40 px-4 pt-[env(safe-area-inset-top)] pb-4 bg-bg/85 backdrop-blur-sm border-b border-border/60"
       >
         <div className="app-header-inner flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -143,7 +144,7 @@ export const HomeScreen: React.FC = () => {
       </motion.div>
 
       {/* Main Content */}
-      <div className="app-content pt-24 pb-40 px-4 space-y-6">
+      <div className="app-content pt-header-tall pb-dock px-4 space-y-5">
         {/* Phase Indicator */}
         {predictions && (
           <motion.div
@@ -187,7 +188,7 @@ export const HomeScreen: React.FC = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
+          transition={{ duration: 0.32, delay: 0.05 }}
         >
           <div className="stats-grid">
             <MotionGlassCard delay={0} className="p-4 text-center card-responsive" onClick={() => setShowPeriodModal(true)}>
@@ -210,7 +211,7 @@ export const HomeScreen: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
+            transition={{ duration: 0.32, delay: 0.08 }}
           >
             <AnniversaryHero anniversary={primary} />
           </motion.div>
@@ -220,7 +221,7 @@ export const HomeScreen: React.FC = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
+          transition={{ duration: 0.32, delay: 0.1 }}
         >
           <PeriodCalendar
             entries={entries}
@@ -234,7 +235,7 @@ export const HomeScreen: React.FC = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
+          transition={{ duration: 0.32, delay: 0.12 }}
         >
           <MotionGlassCard className="p-4">
             <h3 className="font-semibold text-text mb-3">Quick Actions</h3>
@@ -294,7 +295,7 @@ export const HomeScreen: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.7 }}
+            transition={{ duration: 0.32, delay: 0.15 }}
           >
             <h3 className="font-semibold text-text mb-3">Anniversaries</h3>
             <div className="space-y-3">
@@ -311,23 +312,6 @@ export const HomeScreen: React.FC = () => {
           </motion.div>
         )}
       </div>
-
-      {/* Floating Action Button */}
-      <motion.div
-        initial={{ opacity: 0, y: 100 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.8 }}
-        className="fixed bottom-24 left-0 right-0 px-4 pb-4 z-30"
-      >
-        <div className="max-w-md mx-auto">
-          <FAB
-            onClick={() => { setEditingMilestone(null); setShowMilestoneModal(true); }}
-            className="w-full"
-          >
-            <Plus className="w-6 h-6" />
-          </FAB>
-        </div>
-      </motion.div>
 
       {/* Modals */}
       <PeriodLogModal
